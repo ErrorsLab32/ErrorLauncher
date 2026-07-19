@@ -12,6 +12,7 @@ from launcher.navigation import NavigationController
 from launcher.installation_preferences import InstallationPreferences
 from launcher.services.launcher_update_service import launcher_local_data_path
 from launcher.services.auth_service import AuthError, AuthService
+from launcher.services.session_store import DpapiSessionStore
 from launcher.version import LAUNCHER_VERSION
 from launcher.views.launcher_view import LauncherView
 from launcher.views.launcher_update_view import LauncherUpdateView
@@ -34,7 +35,12 @@ class LauncherWindow(QMainWindow):
         self.setCentralWidget(self.stack)
         self.navigation = NavigationController(self.stack)
         self.installation_preferences = InstallationPreferences()
-        self.auth_service = AuthService(load_auth_config())
+        self.auth_service = AuthService(
+            load_auth_config(),
+            session_store=DpapiSessionStore(
+                launcher_local_data_path() / "auth-session.bin"
+            ),
+        )
         self._closing_for_update = False
         self._view_before_update = None
 
@@ -65,6 +71,7 @@ class LauncherWindow(QMainWindow):
         self.navigation.show("login")
 
     def start_background_services(self) -> None:
+        self._restore_saved_session()
         self.launcher_update_controller.start()
 
     def _connect_navigation(self) -> None:
@@ -75,6 +82,8 @@ class LauncherWindow(QMainWindow):
         self.login_view.recovery_requested.connect(
             lambda: self.navigation.show("recovery")
         )
+        self.login_view.session_retry_requested.connect(self._restore_saved_session)
+        self.login_view.session_logout_requested.connect(self._logout)
         self.register_view.back_requested.connect(
             lambda: self.navigation.show("login")
         )
@@ -95,6 +104,7 @@ class LauncherWindow(QMainWindow):
 
     def _login(self) -> None:
         self.login_view.clear_login_error()
+        self.login_view.clear_session_restore_error()
         self.login_view.set_login_in_progress(True)
         try:
             self.auth_service.login(
@@ -114,7 +124,21 @@ class LauncherWindow(QMainWindow):
         self.settings_view.set_current_user("", "")
         self.login_view.password_input.clear()
         self.login_view.clear_login_error()
+        self.login_view.clear_session_restore_error()
         self.navigation.show("login")
+
+    def _restore_saved_session(self) -> None:
+        self.login_view.clear_session_restore_error()
+        try:
+            user = self.auth_service.restore_saved_session()
+        except AuthError as error:
+            self.login_view.show_session_restore_error(
+                f"Не удалось восстановить сессию: {error}"
+            )
+            self.navigation.show("login")
+            return
+        if user is not None:
+            self._show_authenticated_launcher()
 
     def _register(self) -> None:
         self.register_view.clear_registration_error()

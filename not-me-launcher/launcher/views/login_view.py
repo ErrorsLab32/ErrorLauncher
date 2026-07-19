@@ -13,6 +13,8 @@ class LoginView(QWidget):
     login_requested = Signal()
     register_requested = Signal()
     recovery_requested = Signal()
+    session_retry_requested = Signal()
+    session_logout_requested = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -49,6 +51,15 @@ class LoginView(QWidget):
         self.error_label.setWordWrap(True)
         self.error_label.hide()
 
+        self.session_retry_button = QPushButton("Повторить")
+        self.session_retry_button.setObjectName("linkButton")
+        self.session_retry_button.clicked.connect(self.session_retry_requested)
+        self.session_logout_button = QPushButton("Выйти из аккаунта")
+        self.session_logout_button.setObjectName("linkButton")
+        self.session_logout_button.clicked.connect(self.session_logout_requested)
+        self.session_retry_button.hide()
+        self.session_logout_button.hide()
+
         form = QFrame()
         form.setObjectName("authForm")
         form.setMinimumWidth(320)
@@ -63,6 +74,8 @@ class LoginView(QWidget):
         form_layout.addWidget(self.password_input)
         form_layout.addSpacing(4)
         form_layout.addWidget(login_button)
+        form_layout.addWidget(self.session_retry_button)
+        form_layout.addWidget(self.session_logout_button)
         form_layout.addWidget(self.error_label)
         form_layout.addSpacing(8)
         form_layout.addWidget(register_button)
@@ -84,3 +97,12 @@ class LoginView(QWidget):
     def clear_login_error(self) -> None:
         self.error_label.clear()
         self.error_label.hide()
+
+    def show_session_restore_error(self, message: str) -> None:
+        self.show_login_error(message)
+        self.session_retry_button.show()
+        self.session_logout_button.show()
+
+    def clear_session_restore_error(self) -> None:
+        self.session_retry_button.hide()
+        self.session_logout_button.hide()

@@ -4,6 +4,7 @@ from typing import Any
 import requests
 
 from launcher.config import AuthConfig
+from launcher.services.session_store import DpapiSessionStore, SessionStoreError
 
 
 class AuthError(RuntimeError):
@@ -18,6 +19,10 @@ class PasswordMismatchError(AuthError):
     """The password confirmation does not match the password."""
 
 
+class SessionExpiredError(AuthError):
+    """The backend no longer accepts the stored access token."""
+
+
 @dataclass(frozen=True)
 class AuthenticatedUser:
     login: str
@@ -28,10 +33,14 @@ class AuthService:
     """Backend authentication with an access token kept only in memory."""
 
     def __init__(
-        self, config: AuthConfig, session: requests.Session | None = None
+        self,
+        config: AuthConfig,
+        session: requests.Session | None = None,
+        session_store: DpapiSessionStore | None = None,
     ) -> None:
         self._config = config
         self._session = session or requests.Session()
+        self._session_store = session_store
         self._access_token: str | None = None
         self._user: AuthenticatedUser | None = None
 
@@ -90,6 +99,8 @@ class AuthService:
     def _complete_authentication(
         self, response: requests.Response
     ) -> AuthenticatedUser:
+        if response.status_code == 401:
+            raise SessionExpiredError(self._response_error(response))
         if not 200 <= response.status_code < 300:
             raise AuthError(self._response_error(response))
 
@@ -105,6 +116,11 @@ class AuthService:
 
         if not isinstance(token, str) or not token:
             raise AuthError("Сервер вернул некорректный ответ.")
+        if self._session_store is not None:
+            try:
+                self._session_store.save(token)
+            except SessionStoreError as error:
+                raise AuthError(str(error)) from error
         self._access_token = token
         self._user = authenticated_user
         return authenticated_user
@@ -113,22 +129,37 @@ class AuthService:
         response = self._request_authenticated("get", "/auth/me")
         try:
             payload = response.json()
-            return AuthenticatedUser(
+            user = AuthenticatedUser(
                 login=payload["login"], display_name=payload["display_name"]
             )
         except (KeyError, TypeError, ValueError, requests.JSONDecodeError) as error:
             raise AuthError("Сервер вернул некорректный ответ.") from error
 
-    def logout(self) -> None:
-        if self._access_token is None:
-            return
+        self._user = user
+        return user
+
+    def restore_saved_session(self) -> AuthenticatedUser | None:
+        if self._session_store is None:
+            return None
+        token = self._session_store.load()
+        if token is None:
+            return None
+        self._access_token = token
+        self._user = None
         try:
-            self._request_authenticated("post", "/auth/logout")
+            return self.current_user()
+        except SessionExpiredError:
+            self._clear_session()
+            return None
+
+    def logout(self) -> None:
+        try:
+            if self._access_token is not None:
+                self._request_authenticated("post", "/auth/logout")
         except AuthError:
             pass
         finally:
-            self._access_token = None
-            self._user = None
+            self._clear_session()
 
     def _request_authenticated(self, method: str, path: str) -> requests.Response:
         if self._access_token is None:
@@ -144,9 +175,17 @@ class AuthService:
             )
         except requests.RequestException as error:
             raise AuthError("Не удалось подключиться к серверу.") from error
+        if response.status_code == 401:
+            raise SessionExpiredError(self._response_error(response))
         if not 200 <= response.status_code < 300:
             raise AuthError(self._response_error(response))
         return response
+
+    def _clear_session(self) -> None:
+        self._access_token = None
+        self._user = None
+        if self._session_store is not None:
+            self._session_store.clear()
 
     def _url(self, path: str) -> str:
         return f"{self._config.api_base_url}{path}"
