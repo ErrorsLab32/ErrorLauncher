@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from launcher.config import load_github_config
+from launcher.config import GitHubConfig
 from launcher.installation_preferences import (
     InstallationPathError,
     InstallationPreferences,
@@ -36,11 +36,13 @@ from launcher.workers.release_check_worker import ReleaseCheckWorker
 
 class LauncherView(QWidget):
     settings_requested = Signal()
+    access_code_required = Signal()
 
-    def __init__(self, preferences: InstallationPreferences) -> None:
+    def __init__(self, preferences: InstallationPreferences, game_access) -> None:
         super().__init__()
         self.setObjectName("page")
         self._preferences = preferences
+        self._game_access = game_access
         self._release: ReleaseInfo | None = None
         self._release_thread: QThread | None = None
         self._release_worker: ReleaseCheckWorker | None = None
@@ -195,11 +197,17 @@ class LauncherView(QWidget):
         self._set_state(InstallationState.CheckingForUpdates)
 
         thread = QThread(self)
-        worker = ReleaseCheckWorker(load_github_config())
+        config = self._game_access.config()
+        if config is None:
+            self._check_started = False
+            self.access_code_required.emit()
+            return
+        worker = ReleaseCheckWorker(config, self._game_access.forget_invalid_token)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.succeeded.connect(self._on_release_loaded)
         worker.failed.connect(self._on_release_error)
+        worker.access_code_invalid.connect(self.access_code_required)
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
@@ -263,15 +271,17 @@ class LauncherView(QWidget):
 
         thread = QThread(self)
         worker = DownloadWorker(
-            load_github_config(),
+            self._game_access.config() or GitHubConfig("ErrorsLab32/Not-ME", ""),
             self._release,
             destination_directory,
+            self._game_access.forget_invalid_token,
         )
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.progress.connect(self._on_download_progress)
         worker.succeeded.connect(self._on_download_finished)
         worker.failed.connect(self._on_download_error)
+        worker.access_code_invalid.connect(self.access_code_required)
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)

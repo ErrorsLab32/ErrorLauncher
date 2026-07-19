@@ -24,6 +24,7 @@ from launcher.installation_preferences import (
 class SettingsView(QWidget):
     back_requested = Signal()
     logout_requested = Signal()
+    change_access_code_requested = Signal()
 
     def __init__(self, preferences: InstallationPreferences) -> None:
         super().__init__()
@@ -105,6 +106,9 @@ class SettingsView(QWidget):
         new_code_button = QPushButton("Создать новый код")
         new_code_button.clicked.connect(self._create_code)
 
+        access_code_button = QPushButton("Изменить код доступа")
+        access_code_button.clicked.connect(self.change_access_code_requested)
+
         logout_button = QPushButton("Выйти из аккаунта")
         logout_button.setObjectName("dangerTextButton")
         logout_button.clicked.connect(self.logout_requested)
@@ -125,6 +129,7 @@ class SettingsView(QWidget):
         form_layout.addWidget(code_description)
         form_layout.addWidget(self.code_label)
         form_layout.addWidget(new_code_button)
+        form_layout.addWidget(access_code_button)
         form_layout.addSpacing(22)
         form_layout.addWidget(logout_button, alignment=Qt.AlignmentFlag.AlignLeft)
 

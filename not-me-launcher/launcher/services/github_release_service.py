@@ -14,9 +14,10 @@ CancellationCallback = Callable[[], bool]
 
 
 class GitHubReleaseError(Exception):
-    def __init__(self, user_message: str) -> None:
+    def __init__(self, user_message: str, status_code: int | None = None) -> None:
         super().__init__(user_message)
         self.user_message = user_message
+        self.status_code = status_code
 
 
 def natural_sort_key(value: str) -> list[tuple[int, object]]:
@@ -241,6 +242,8 @@ class GitHubReleaseService:
             ) from error
 
     def _require_configuration(self) -> None:
+        if self._config.repository != "ErrorsLab32/Not-ME":
+            raise GitHubReleaseError("Invalid playtest repository configuration.")
         if not self._config.token:
             raise GitHubReleaseError(
                 "Не указан токен доступа к GitHub. Добавьте GITHUB_TOKEN в файл .env"
@@ -282,6 +285,8 @@ class GitHubReleaseService:
 
     @staticmethod
     def _raise_for_status(response: requests.Response) -> None:
+        if response.status_code in (401, 403):
+            raise GitHubReleaseError("Access to the playtest repository was denied.", response.status_code)
         if response.status_code == 401:
             raise GitHubReleaseError("Токен GitHub недействителен.")
         if response.status_code == 403:
