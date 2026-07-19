@@ -20,6 +20,9 @@ jobs:
   publish:
     runs-on: windows-latest
     environment: production
+    defaults:
+      run:
+        working-directory: not-me-launcher
     steps:
       - name: Checkout selected revision
         uses: actions/checkout@v4
@@ -89,9 +92,9 @@ jobs:
         with:
           name: ErrorLabsPlaytest-${{ steps.version.outputs.version }}-win-x64
           path: |
-            release/${{ steps.version.outputs.version }}/ErrorLabsPlaytestSetup-${{ steps.version.outputs.version }}.exe
-            release/${{ steps.version.outputs.version }}/ErrorLabsPlaytest-${{ steps.version.outputs.version }}-win-x64.zip
-            release/${{ steps.version.outputs.version }}/launcher-manifest.json
+            not-me-launcher/release/${{ steps.version.outputs.version }}/ErrorLabsPlaytestSetup-${{ steps.version.outputs.version }}.exe
+            not-me-launcher/release/${{ steps.version.outputs.version }}/ErrorLabsPlaytest-${{ steps.version.outputs.version }}-win-x64.zip
+            not-me-launcher/release/${{ steps.version.outputs.version }}/launcher-manifest.json
 
       - name: Write pre-publication summary
         shell: pwsh
