@@ -51,6 +51,7 @@ class LauncherView(QWidget):
         self._check_started = False
         self._installed_version = preferences.installed_version
         self._state = InstallationState.NotInstalled
+        self._launcher_update_blocked = False
 
         root = QVBoxLayout(self)
         root.setContentsMargins(42, 28, 42, 34)
@@ -72,7 +73,7 @@ class LauncherView(QWidget):
     def showEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         super().showEvent(event)
         if not self._check_started:
-            self._start_release_check()
+            self.start_game_release_check()
 
     def _build_header(self) -> QHBoxLayout:
         header = QHBoxLayout()
@@ -161,6 +162,9 @@ class LauncherView(QWidget):
         action_column.setSpacing(7)
         self.path_hint = QLabel("Папка установки будет выбрана перед загрузкой")
         self.path_hint.setObjectName("progressDetail")
+        self.launcher_update_notice = QLabel("")
+        self.launcher_update_notice.setObjectName("progressDetail")
+        self.launcher_update_notice.setVisible(False)
         self.progress_label = QLabel("Проверка обновлений")
         self.progress_label.setObjectName("progressLabel")
         self.progress_detail = QLabel("")
@@ -175,6 +179,7 @@ class LauncherView(QWidget):
         self.action_button.setEnabled(False)
         self.action_button.clicked.connect(self._handle_action)
         action_column.addWidget(self.path_hint)
+        action_column.addWidget(self.launcher_update_notice)
         action_column.addWidget(self.progress_label)
         action_column.addWidget(self.progress_detail)
         action_column.addWidget(self.progress)
@@ -184,7 +189,7 @@ class LauncherView(QWidget):
         return area
 
     def _start_release_check(self) -> None:
-        if self._release_thread is not None:
+        if self._release_thread is not None or self._launcher_update_blocked:
             return
         self._check_started = True
         self._set_state(InstallationState.CheckingForUpdates)
@@ -303,6 +308,8 @@ class LauncherView(QWidget):
             self._preferences.set_download_active(False)
 
     def _handle_action(self) -> None:
+        if self._launcher_update_blocked:
+            return
         if self._state is InstallationState.ReadyToPlay:
             self._launch_game()
         elif self._state is InstallationState.Downloaded:
@@ -439,6 +446,25 @@ class LauncherView(QWidget):
             if thread is not None and thread.isRunning()
         )
         return not any(True for _thread in running_threads)
+
+    def start_game_release_check(self) -> None:
+        if not self._check_started and not self._launcher_update_blocked:
+            self._start_release_check()
+
+    def set_game_operations_blocked(self, blocked: bool) -> None:
+        self._launcher_update_blocked = blocked
+        if blocked:
+            self.action_button.setEnabled(False)
+        else:
+            self._set_state(self._state)
+
+    def show_pending_launcher_update(self, visible: bool) -> None:
+        self.launcher_update_notice.setText(
+            "Обновление лаунчера будет установлено после завершения текущей операции"
+            if visible
+            else ""
+        )
+        self.launcher_update_notice.setVisible(visible)
 
     def _set_patch_notes_markdown(self, markdown: str) -> None:
         features = (

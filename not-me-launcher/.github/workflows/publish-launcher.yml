@@ -1,0 +1,172 @@
+name: Publish Launcher
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Launcher version, for example 0.1.0 or v0.1.0"
+        required: true
+        type: string
+      prerelease:
+        description: "Publish as a prerelease"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: windows-latest
+    environment: production
+    steps:
+      - name: Checkout selected revision
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller packaging
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress --yes
+          if ($LASTEXITCODE -ne 0) {
+            throw "Inno Setup installation failed."
+          }
+
+      - name: Normalize and validate version
+        id: version
+        shell: pwsh
+        env:
+          RAW_VERSION: ${{ inputs.version }}
+        run: |
+          $raw = $env:RAW_VERSION.Trim()
+          if ($raw.StartsWith("v", [StringComparison]::OrdinalIgnoreCase)) {
+            $raw = $raw.Substring(1)
+          }
+          $normalized = python -c "from packaging.version import Version; import sys; print(Version(sys.argv[1]))" $raw
+          if ($LASTEXITCODE -ne 0 -or -not $normalized) {
+            throw "Invalid launcher version: $env:RAW_VERSION"
+          }
+          "version=$($normalized.Trim())" >> $env:GITHUB_OUTPUT
+          "tag=v$($normalized.Trim())" >> $env:GITHUB_OUTPUT
+
+      - name: Ensure tag and Release do not exist
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          gh release view $env:TAG --repo $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            throw "Release $env:TAG already exists."
+          }
+          gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$env:TAG" 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            throw "Tag $env:TAG already exists."
+          }
+
+      - name: Test
+        shell: pwsh
+        run: python -m unittest discover -s tests -v
+
+      - name: Build, package, and create installer
+        shell: pwsh
+        run: ./scripts/package_launcher_release.ps1 -Version "${{ steps.version.outputs.version }}" -PythonExecutable "python"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ErrorLabsPlaytest-${{ steps.version.outputs.version }}-win-x64
+          path: |
+            release/${{ steps.version.outputs.version }}/ErrorLabsPlaytestSetup-${{ steps.version.outputs.version }}.exe
+            release/${{ steps.version.outputs.version }}/ErrorLabsPlaytest-${{ steps.version.outputs.version }}-win-x64.zip
+            release/${{ steps.version.outputs.version }}/launcher-manifest.json
+
+      - name: Write pre-publication summary
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          @"
+          ## Ready to publish
+
+          - Version: ``$env:VERSION``
+          - Tag: ``$env:TAG``
+          - Commit: ``$env:COMMIT_SHA``
+          - Asset: ``ErrorLabsPlaytestSetup-$env:VERSION.exe``
+          - Asset: ``ErrorLabsPlaytest-$env:VERSION-win-x64.zip``
+          - Asset: ``launcher-manifest.json``
+          "@ >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Create tag and published GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          $directory = "release/$env:VERSION"
+          $setup = "$directory/ErrorLabsPlaytestSetup-$env:VERSION.exe"
+          $zip = "$directory/ErrorLabsPlaytest-$env:VERSION-win-x64.zip"
+          $manifest = "$directory/launcher-manifest.json"
+          foreach ($file in @($setup, $zip, $manifest)) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) {
+              throw "Required release asset is missing: $file"
+            }
+          }
+
+          git tag $env:TAG $env:GITHUB_SHA
+          git push origin $env:TAG
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not create tag $env:TAG."
+          }
+
+          $arguments = @(
+            "release", "create", $env:TAG,
+            $setup, $zip, $manifest,
+            "--repo", $env:GITHUB_REPOSITORY,
+            "--title", "ErrorLabs Playtest $env:VERSION",
+            "--generate-notes"
+          )
+          if ($env:PRERELEASE -eq "true") {
+            $arguments += "--prerelease"
+          }
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not create the GitHub Release."
+          }
+
+      - name: Write publication summary
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          $directory = "release/$env:VERSION"
+          $zipName = "ErrorLabsPlaytest-$env:VERSION-win-x64.zip"
+          $manifest = Get-Content "$directory/launcher-manifest.json" -Raw | ConvertFrom-Json
+          $size = (Get-Item "$directory/$zipName").Length
+          $releaseUrl = gh release view $env:TAG --repo $env:GITHUB_REPOSITORY --json url --jq .url
+          @"
+          ## Published ErrorLabs Playtest $env:VERSION
+
+          - ZIP size: ``$size`` bytes
+          - ZIP SHA-256: ``$($manifest.sha256)``
+          - Release: $releaseUrl
+          - Assets: ``ErrorLabsPlaytestSetup-$env:VERSION.exe``, ``$zipName``, ``launcher-manifest.json``
+          "@ >> $env:GITHUB_STEP_SUMMARY

@@ -20,8 +20,23 @@ class GitHubConfig:
     read_timeout: float = 60.0
 
 
+@dataclass(frozen=True)
+class LauncherUpdateConfig:
+    repository: str = "ErrorsLab32/ErrorLauncher"
+    check_interval_ms: int = 3_600_000
+
+
 def load_github_config() -> GitHubConfig:
     return GitHubConfig(
         repository=os.getenv("GITHUB_REPOSITORY", "ErrorsLab32/Not-ME").strip(),
         token=os.getenv("GITHUB_TOKEN", "").strip(),
+    )
+
+
+def load_launcher_update_config() -> LauncherUpdateConfig:
+    return LauncherUpdateConfig(
+        repository=os.getenv(
+            "LAUNCHER_GITHUB_REPOSITORY",
+            "ErrorsLab32/ErrorLauncher",
+        ).strip()
     )

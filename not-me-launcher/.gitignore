@@ -3,3 +3,8 @@
 __pycache__/
 downloads/
 temp/
+build/
+dist/
+release-output/
+release/
+self-update-e2e/
