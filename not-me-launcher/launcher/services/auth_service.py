@@ -14,6 +14,10 @@ class InvalidCredentialsError(AuthError):
     """The backend rejected the supplied login credentials."""
 
 
+class PasswordMismatchError(AuthError):
+    """The password confirmation does not match the password."""
+
+
 @dataclass(frozen=True)
 class AuthenticatedUser:
     login: str
@@ -40,10 +44,39 @@ class AuthService:
         return self._user
 
     def login(self, login: str, password: str) -> AuthenticatedUser:
+        response = self._post(
+            "/auth/login", {"login": login, "password": password}
+        )
+        if response.status_code == 401:
+            raise InvalidCredentialsError(self._response_error(response))
+        return self._complete_authentication(response)
+
+    def register(
+        self,
+        login: str,
+        display_name: str,
+        password: str,
+        password_confirmation: str,
+        invite_code: str,
+    ) -> AuthenticatedUser:
+        if password != password_confirmation:
+            raise PasswordMismatchError("Пароли не совпадают.")
+        response = self._post(
+            "/auth/register",
+            {
+                "login": login,
+                "display_name": display_name,
+                "password": password,
+                "invite_code": invite_code,
+            },
+        )
+        return self._complete_authentication(response)
+
+    def _post(self, path: str, payload: dict[str, str]) -> requests.Response:
         try:
             response = self._session.post(
-                self._url("/auth/login"),
-                json={"login": login, "password": password},
+                self._url(path),
+                json=payload,
                 timeout=(
                     self._config.connect_timeout,
                     self._config.read_timeout,
@@ -52,8 +85,11 @@ class AuthService:
         except requests.RequestException as error:
             raise AuthError("Не удалось подключиться к серверу.") from error
 
-        if response.status_code == 401:
-            raise InvalidCredentialsError(self._response_error(response))
+        return response
+
+    def _complete_authentication(
+        self, response: requests.Response
+    ) -> AuthenticatedUser:
         if not 200 <= response.status_code < 300:
             raise AuthError(self._response_error(response))
 

@@ -78,9 +78,7 @@ class LauncherWindow(QMainWindow):
         self.register_view.back_requested.connect(
             lambda: self.navigation.show("login")
         )
-        self.register_view.registration_requested.connect(
-            lambda: self.navigation.show("login")
-        )
+        self.register_view.registration_requested.connect(self._register)
         self.recovery_view.back_requested.connect(
             lambda: self.navigation.show("login")
         )
@@ -115,6 +113,24 @@ class LauncherWindow(QMainWindow):
         self.login_view.password_input.clear()
         self.login_view.clear_login_error()
         self.navigation.show("login")
+
+    def _register(self) -> None:
+        self.register_view.clear_registration_error()
+        self.register_view.set_registration_in_progress(True)
+        try:
+            self.auth_service.register(
+                self.register_view.login_input.text(),
+                self.register_view.display_name_input.text(),
+                self.register_view.password_input.text(),
+                self.register_view.password_confirmation_input.text(),
+                self.register_view.invite_code_input.text(),
+            )
+        except AuthError as error:
+            self.register_view.show_registration_error(str(error))
+        else:
+            self.navigation.show("launcher")
+        finally:
+            self.register_view.set_registration_in_progress(False)
 
     def _connect_launcher_update(self) -> None:
         controller = self.launcher_update_controller

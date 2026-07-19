@@ -7,6 +7,7 @@ from launcher.services.auth_service import (
     AuthError,
     AuthService,
     InvalidCredentialsError,
+    PasswordMismatchError,
 )
 
 
@@ -79,6 +80,65 @@ class AuthServiceTests(unittest.TestCase):
             service.login("player", "secret")
 
         self.assertIsNone(service.access_token)
+
+    def test_successful_registration_keeps_token_in_memory(self) -> None:
+        session = FakeSession(
+            FakeResponse(
+                201,
+                {
+                    "access_token": "registered-token",
+                    "token_type": "bearer",
+                    "user": {"login": "new_player", "display_name": "New Player"},
+                },
+            )
+        )
+        service = AuthService(self.config, session)
+
+        user = service.register(
+            "new_player", "New Player", "secret", "secret", "invite-code"
+        )
+
+        self.assertEqual(user.display_name, "New Player")
+        self.assertEqual(service.access_token, "registered-token")
+        self.assertEqual(session.calls[0][1], "http://backend.test:8000/auth/register")
+        self.assertEqual(
+            session.calls[0][2]["json"],
+            {
+                "login": "new_player",
+                "display_name": "New Player",
+                "password": "secret",
+                "invite_code": "invite-code",
+            },
+        )
+
+    def test_invalid_invite_code_shows_backend_detail(self) -> None:
+        service = AuthService(
+            self.config,
+            FakeSession(FakeResponse(400, {"detail": "Неверный код приглашения"})),
+        )
+
+        with self.assertRaisesRegex(AuthError, "Неверный код приглашения"):
+            service.register("new_player", "New Player", "secret", "secret", "bad")
+
+        self.assertIsNone(service.access_token)
+
+    def test_registration_rejects_mismatched_passwords_without_request(self) -> None:
+        session = FakeSession(FakeResponse(201, {}))
+        service = AuthService(self.config, session)
+
+        with self.assertRaisesRegex(PasswordMismatchError, "Пароли не совпадают"):
+            service.register("new_player", "New Player", "secret", "different", "code")
+
+        self.assertEqual(session.calls, [])
+
+    def test_registration_network_error_is_reported(self) -> None:
+        service = AuthService(
+            self.config,
+            FakeSession(requests.ConnectionError("connection refused")),
+        )
+
+        with self.assertRaisesRegex(AuthError, "Не удалось подключиться"):
+            service.register("new_player", "New Player", "secret", "secret", "code")
 
 
 if __name__ == "__main__":
