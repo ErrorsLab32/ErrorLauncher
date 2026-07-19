@@ -70,14 +70,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}
         run: |
-          gh release view $env:TAG --repo $env:GITHUB_REPOSITORY 2>$null
-          if ($LASTEXITCODE -eq 0) {
+          gh release view $env:TAG --repo $env:GITHUB_REPOSITORY 2>$null | Out-Null
+          $releaseExists = $LASTEXITCODE -eq 0
+          if ($releaseExists) {
             throw "Release $env:TAG already exists."
           }
-          gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$env:TAG" 2>$null
-          if ($LASTEXITCODE -eq 0) {
+          gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$env:TAG" 2>$null | Out-Null
+          $tagExists = $LASTEXITCODE -eq 0
+          if ($tagExists) {
             throw "Tag $env:TAG already exists."
           }
+          exit 0
 
       - name: Test
         shell: pwsh
