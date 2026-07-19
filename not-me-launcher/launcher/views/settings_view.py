@@ -85,10 +85,15 @@ class SettingsView(QWidget):
         path_actions.addWidget(self.open_path_button)
         path_actions.addStretch()
 
+        display_name_caption = QLabel("ОТОБРАЖАЕМОЕ ИМЯ")
+        display_name_caption.setObjectName("sectionCaption")
+        self.display_name_value = QLabel()
+        self.display_name_value.setObjectName("sectionTitle")
+
         login_caption = QLabel("ЛОГИН ПОЛЬЗОВАТЕЛЯ")
         login_caption.setObjectName("sectionCaption")
-        login_value = QLabel("player_demo")
-        login_value.setObjectName("sectionTitle")
+        self.login_value = QLabel()
+        self.login_value.setObjectName("sectionTitle")
         change_password_button = QPushButton("Сменить пароль")
         change_password_button.clicked.connect(self._show_password_message)
 
@@ -116,8 +121,10 @@ class SettingsView(QWidget):
         form_layout.addSpacing(20)
         form_layout.addWidget(self._separator())
         form_layout.addSpacing(18)
+        form_layout.addWidget(display_name_caption)
+        form_layout.addWidget(self.display_name_value)
         form_layout.addWidget(login_caption)
-        form_layout.addWidget(login_value)
+        form_layout.addWidget(self.login_value)
         form_layout.addWidget(change_password_button)
         form_layout.addSpacing(20)
         form_layout.addWidget(self._separator())
@@ -173,6 +180,10 @@ class SettingsView(QWidget):
         path = self._preferences.install_path
         self.install_path_label.setText(str(path) if path is not None else "Не выбрана")
         self.open_path_button.setEnabled(path is not None and path.is_dir())
+
+    def set_current_user(self, display_name: str, login: str) -> None:
+        self.display_name_value.setText(display_name)
+        self.login_value.setText(login)
 
     @staticmethod
     def _separator() -> QFrame:

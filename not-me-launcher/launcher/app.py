@@ -104,12 +104,14 @@ class LauncherWindow(QMainWindow):
         except AuthError as error:
             self.login_view.show_login_error(str(error))
         else:
-            self.navigation.show("launcher")
+            self._show_authenticated_launcher()
         finally:
             self.login_view.set_login_in_progress(False)
 
     def _logout(self) -> None:
         self.auth_service.logout()
+        self.launcher_view.set_current_user("")
+        self.settings_view.set_current_user("", "")
         self.login_view.password_input.clear()
         self.login_view.clear_login_error()
         self.navigation.show("login")
@@ -128,9 +130,18 @@ class LauncherWindow(QMainWindow):
         except AuthError as error:
             self.register_view.show_registration_error(str(error))
         else:
-            self.navigation.show("launcher")
+            self._show_authenticated_launcher()
         finally:
             self.register_view.set_registration_in_progress(False)
+
+    def _show_authenticated_launcher(self) -> None:
+        user = self.auth_service.user
+        if user is None:
+            self.login_view.show_login_error("Не удалось получить данные пользователя.")
+            return
+        self.launcher_view.set_current_user(user.display_name)
+        self.settings_view.set_current_user(user.display_name, user.login)
+        self.navigation.show("launcher")
 
     def _connect_launcher_update(self) -> None:
         controller = self.launcher_update_controller

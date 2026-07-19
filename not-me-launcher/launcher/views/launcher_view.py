@@ -81,14 +81,14 @@ class LauncherView(QWidget):
         header.setSpacing(14)
         brand = QLabel("ERRORLABS PLAYTEST")
         brand.setObjectName("brandTitle")
-        user = QLabel("player_demo")
-        user.setObjectName("mutedLabel")
+        self.user_label = QLabel()
+        self.user_label.setObjectName("mutedLabel")
         settings_button = QPushButton("НАСТРОЙКИ")
         settings_button.setObjectName("headerButton")
         settings_button.clicked.connect(self.settings_requested)
         header.addWidget(brand)
         header.addStretch()
-        header.addWidget(user)
+        header.addWidget(self.user_label)
         header.addWidget(settings_button)
         return header
 
@@ -459,6 +459,9 @@ class LauncherView(QWidget):
             self.action_button.setEnabled(False)
         else:
             self._set_state(self._state)
+
+    def set_current_user(self, display_name: str) -> None:
+        self.user_label.setText(display_name)
 
     def show_pending_launcher_update(self, visible: bool) -> None:
         self.launcher_update_notice.setText(

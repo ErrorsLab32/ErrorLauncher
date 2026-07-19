@@ -21,15 +21,16 @@ class FakeResponse:
 
 
 class FakeSession:
-    def __init__(self, response: FakeResponse | Exception) -> None:
-        self.response = response
+    def __init__(self, response: FakeResponse | Exception | list[FakeResponse]) -> None:
+        self.responses = response if isinstance(response, list) else [response]
         self.calls: list[tuple[str, str, dict]] = []
 
     def post(self, url: str, **kwargs) -> FakeResponse:
         self.calls.append(("post", url, kwargs))
-        if isinstance(self.response, Exception):
-            raise self.response
-        return self.response
+        response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 class AuthServiceTests(unittest.TestCase):
@@ -54,6 +55,7 @@ class AuthServiceTests(unittest.TestCase):
         self.assertEqual(user.login, "player")
         self.assertEqual(user.display_name, "Player One")
         self.assertEqual(service.access_token, "access-token")
+        self.assertEqual(service.user, user)
         self.assertEqual(session.calls[0][1], "http://backend.test:8000/auth/login")
         self.assertEqual(
             session.calls[0][2]["json"], {"login": "player", "password": "secret"}
@@ -100,6 +102,7 @@ class AuthServiceTests(unittest.TestCase):
 
         self.assertEqual(user.display_name, "New Player")
         self.assertEqual(service.access_token, "registered-token")
+        self.assertEqual(service.user, user)
         self.assertEqual(session.calls[0][1], "http://backend.test:8000/auth/register")
         self.assertEqual(
             session.calls[0][2]["json"],
@@ -139,6 +142,29 @@ class AuthServiceTests(unittest.TestCase):
 
         with self.assertRaisesRegex(AuthError, "Не удалось подключиться"):
             service.register("new_player", "New Player", "secret", "secret", "code")
+
+    def test_logout_clears_token_and_current_user(self) -> None:
+        session = FakeSession(
+            [
+                FakeResponse(
+                    200,
+                    {
+                        "access_token": "access-token",
+                        "token_type": "bearer",
+                        "user": {"login": "player", "display_name": "Player One"},
+                    },
+                ),
+                FakeResponse(204, {}),
+            ]
+        )
+        service = AuthService(self.config, session)
+        service.login("player", "secret")
+
+        service.logout()
+
+        self.assertIsNone(service.access_token)
+        self.assertIsNone(service.user)
+        self.assertEqual(session.calls[1][1], "http://backend.test:8000/auth/logout")
 
 
 if __name__ == "__main__":
