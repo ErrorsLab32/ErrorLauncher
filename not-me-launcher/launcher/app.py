@@ -10,6 +10,7 @@ from launcher.config import load_launcher_update_config
 from launcher.launcher_update_controller import LauncherUpdateController
 from launcher.navigation import NavigationController
 from launcher.installation_preferences import InstallationPreferences
+from launcher.services.launcher_update_service import launcher_local_data_path
 from launcher.version import LAUNCHER_VERSION
 from launcher.views.launcher_view import LauncherView
 from launcher.views.launcher_update_view import LauncherUpdateView
@@ -156,10 +157,7 @@ def run() -> int:
     app.setStyle("Fusion")
     app.setStyleSheet(load_stylesheet())
 
-    try:
-        local_data_path = launcher_local_data_path()
-    except Exception:
-        return 1
+    local_data_path = launcher_local_data_path()
     local_data_path.mkdir(parents=True, exist_ok=True)
     instance_lock = QLockFile(str(local_data_path / "errorlabs-playtest.lock"))
     instance_lock.setStaleLockTime(0)
