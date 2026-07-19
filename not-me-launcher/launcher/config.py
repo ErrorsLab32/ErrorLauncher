@@ -2,15 +2,12 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ENV_PATH = PROJECT_ROOT / ".env"
 LEGACY_INSTALLATION_STATE_PATH = PROJECT_ROOT / "data" / "installation.json"
-
-load_dotenv(ENV_PATH)
-
 
 @dataclass(frozen=True)
 class GitHubConfig:
@@ -27,9 +24,10 @@ class LauncherUpdateConfig:
 
 
 def load_github_config() -> GitHubConfig:
+    values = dotenv_values(ENV_PATH)
     return GitHubConfig(
-        repository=os.getenv("GITHUB_REPOSITORY", "ErrorsLab32/Not-ME").strip(),
-        token=os.getenv("GITHUB_TOKEN", "").strip(),
+        repository="ErrorsLab32/Not-ME",
+        token=str(values.get("GITHUB_TOKEN") or "").strip(),
     )
 
 

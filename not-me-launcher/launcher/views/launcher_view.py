@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from launcher.config import GitHubConfig
+from launcher.config import load_github_config
 from launcher.installation_preferences import (
     InstallationPathError,
     InstallationPreferences,
@@ -36,13 +36,11 @@ from launcher.workers.release_check_worker import ReleaseCheckWorker
 
 class LauncherView(QWidget):
     settings_requested = Signal()
-    access_code_required = Signal()
 
-    def __init__(self, preferences: InstallationPreferences, game_access) -> None:
+    def __init__(self, preferences: InstallationPreferences) -> None:
         super().__init__()
         self.setObjectName("page")
         self._preferences = preferences
-        self._game_access = game_access
         self._release: ReleaseInfo | None = None
         self._release_thread: QThread | None = None
         self._release_worker: ReleaseCheckWorker | None = None
@@ -196,18 +194,20 @@ class LauncherView(QWidget):
         self._check_started = True
         self._set_state(InstallationState.CheckingForUpdates)
 
-        thread = QThread(self)
-        config = self._game_access.config()
-        if config is None:
-            self._check_started = False
-            self.access_code_required.emit()
+        config = load_github_config()
+        if not config.token:
+            self.patch_title.setText("ТЕСТОВАЯ СБОРКА НЕДОСТУПНА")
+            self._set_patch_notes_markdown(
+                "Загрузка тестовой сборки станет доступна после авторизации"
+            )
+            self._set_state(InstallationState.AccessUnavailable)
             return
-        worker = ReleaseCheckWorker(config, self._game_access.forget_invalid_token)
+        thread = QThread(self)
+        worker = ReleaseCheckWorker(config)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.succeeded.connect(self._on_release_loaded)
         worker.failed.connect(self._on_release_error)
-        worker.access_code_invalid.connect(self.access_code_required)
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
@@ -255,9 +255,10 @@ class LauncherView(QWidget):
     @Slot(str)
     def _on_release_error(self, message: str) -> None:
         self._release = None
-        self.patch_title.setText("НЕ УДАЛОСЬ ПОЛУЧИТЬ РЕЛИЗ")
-        self._set_patch_notes_markdown(message)
-        self._show_error(message)
+        user_message = "Загрузка тестовой сборки временно недоступна. Повторите попытку позже."
+        self.patch_title.setText("ТЕСТОВАЯ СБОРКА НЕДОСТУПНА")
+        self._set_patch_notes_markdown(user_message)
+        self._show_error(user_message)
 
     @Slot()
     def _clear_release_thread(self) -> None:
@@ -271,17 +272,15 @@ class LauncherView(QWidget):
 
         thread = QThread(self)
         worker = DownloadWorker(
-            self._game_access.config() or GitHubConfig("ErrorsLab32/Not-ME", ""),
+            load_github_config(),
             self._release,
             destination_directory,
-            self._game_access.forget_invalid_token,
         )
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
         worker.progress.connect(self._on_download_progress)
         worker.succeeded.connect(self._on_download_finished)
         worker.failed.connect(self._on_download_error)
-        worker.access_code_invalid.connect(self.access_code_required)
         worker.finished.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
@@ -308,7 +307,7 @@ class LauncherView(QWidget):
 
     @Slot(str)
     def _on_download_error(self, message: str) -> None:
-        self._show_error(message)
+        self._show_error("Не удалось загрузить тестовую сборку. Повторите попытку позже.")
 
     @Slot()
     def _clear_download_thread(self) -> None:
@@ -493,6 +492,13 @@ class LauncherView(QWidget):
             self.progress_detail.clear()
             self.progress.setValue(0)
             self.action_button.setText("ПРОВЕРКА…")
+            self.action_button.setEnabled(False)
+        elif state is InstallationState.AccessUnavailable:
+            self.status_label.setText("ТЕСТОВАЯ СБОРКА НЕДОСТУПНА")
+            self.progress_label.setText("Загрузка тестовой сборки станет доступна после авторизации")
+            self.progress_detail.clear()
+            self.progress.setValue(0)
+            self.action_button.setText("НЕДОСТУПНО")
             self.action_button.setEnabled(False)
         elif state is InstallationState.ReadyToDownload:
             self.status_label.setText("СБОРКА ДОСТУПНА")

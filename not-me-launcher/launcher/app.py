@@ -4,17 +4,13 @@ import sys
 
 from PySide6.QtCore import QCoreApplication, QLockFile, Qt, QTimer
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QApplication, QDialog, QMainWindow, QMessageBox, QStackedWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWidget
 
 from launcher.config import load_launcher_update_config
 from launcher.launcher_update_controller import LauncherUpdateController
 from launcher.navigation import NavigationController
 from launcher.installation_preferences import InstallationPreferences
 from launcher.version import LAUNCHER_VERSION
-from launcher.services.launcher_update_service import launcher_local_data_path
-from launcher.services.access_token_store import AccessTokenStore, AccessTokenStoreError
-from launcher.services.game_access_service import GameAccessError, GameAccessService
-from launcher.views.access_code_dialog import AccessCodeDialog
 from launcher.views.launcher_view import LauncherView
 from launcher.views.launcher_update_view import LauncherUpdateView
 from launcher.views.login_view import LoginView
@@ -36,14 +32,13 @@ class LauncherWindow(QMainWindow):
         self.setCentralWidget(self.stack)
         self.navigation = NavigationController(self.stack)
         self.installation_preferences = InstallationPreferences()
-        self.game_access = GameAccessService(AccessTokenStore(launcher_local_data_path() / "game-access.dpapi"))
         self._closing_for_update = False
         self._view_before_update = None
 
         self.login_view = LoginView()
         self.register_view = RegisterView()
         self.recovery_view = RecoveryView()
-        self.launcher_view = LauncherView(self.installation_preferences, self.game_access)
+        self.launcher_view = LauncherView(self.installation_preferences)
         self.launcher_view.set_game_operations_blocked(True)
         self.launcher_update_view = LauncherUpdateView()
         self.settings_view = SettingsView(self.installation_preferences)
@@ -100,19 +95,6 @@ class LauncherWindow(QMainWindow):
         self.settings_view.logout_requested.connect(
             lambda: self.navigation.show("login")
         )
-        self.settings_view.change_access_code_requested.connect(self._change_access_code)
-        self.launcher_view.access_code_required.connect(self._change_access_code)
-
-    def _change_access_code(self) -> None:
-        dialog = AccessCodeDialog(self)
-        while dialog.exec() == QDialog.DialogCode.Accepted:
-            try:
-                self.game_access.validate_and_save(dialog.token)
-            except (GameAccessError, AccessTokenStoreError) as error:
-                QMessageBox.warning(self, "Код доступа к тестовой сборке", str(error))
-                continue
-            self.launcher_view.start_game_release_check()
-            return
 
     def _connect_launcher_update(self) -> None:
         controller = self.launcher_update_controller

@@ -3,6 +3,7 @@ from enum import Enum, auto
 
 class InstallationState(Enum):
     NotInstalled = auto()
+    AccessUnavailable = auto()
     CheckingForUpdates = auto()
     ReadyToDownload = auto()
     Downloading = auto()
