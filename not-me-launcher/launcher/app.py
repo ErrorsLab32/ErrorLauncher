@@ -6,11 +6,12 @@ from PySide6.QtCore import QCoreApplication, QLockFile, Qt, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWidget
 
-from launcher.config import load_launcher_update_config
+from launcher.config import load_auth_config, load_launcher_update_config
 from launcher.launcher_update_controller import LauncherUpdateController
 from launcher.navigation import NavigationController
 from launcher.installation_preferences import InstallationPreferences
 from launcher.services.launcher_update_service import launcher_local_data_path
+from launcher.services.auth_service import AuthError, AuthService
 from launcher.version import LAUNCHER_VERSION
 from launcher.views.launcher_view import LauncherView
 from launcher.views.launcher_update_view import LauncherUpdateView
@@ -33,6 +34,7 @@ class LauncherWindow(QMainWindow):
         self.setCentralWidget(self.stack)
         self.navigation = NavigationController(self.stack)
         self.installation_preferences = InstallationPreferences()
+        self.auth_service = AuthService(load_auth_config())
         self._closing_for_update = False
         self._view_before_update = None
 
@@ -66,9 +68,7 @@ class LauncherWindow(QMainWindow):
         self.launcher_update_controller.start()
 
     def _connect_navigation(self) -> None:
-        self.login_view.login_requested.connect(
-            lambda: self.navigation.show("launcher")
-        )
+        self.login_view.login_requested.connect(self._login)
         self.login_view.register_requested.connect(
             lambda: self.navigation.show("register")
         )
@@ -93,9 +93,28 @@ class LauncherWindow(QMainWindow):
         self.settings_view.back_requested.connect(
             lambda: self.navigation.show("launcher")
         )
-        self.settings_view.logout_requested.connect(
-            lambda: self.navigation.show("login")
-        )
+        self.settings_view.logout_requested.connect(self._logout)
+
+    def _login(self) -> None:
+        self.login_view.clear_login_error()
+        self.login_view.set_login_in_progress(True)
+        try:
+            self.auth_service.login(
+                self.login_view.login_input.text(),
+                self.login_view.password_input.text(),
+            )
+        except AuthError as error:
+            self.login_view.show_login_error(str(error))
+        else:
+            self.navigation.show("launcher")
+        finally:
+            self.login_view.set_login_in_progress(False)
+
+    def _logout(self) -> None:
+        self.auth_service.logout()
+        self.login_view.password_input.clear()
+        self.login_view.clear_login_error()
+        self.navigation.show("login")
 
     def _connect_launcher_update(self) -> None:
         controller = self.launcher_update_controller

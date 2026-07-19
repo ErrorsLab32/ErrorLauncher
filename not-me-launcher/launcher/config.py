@@ -25,6 +25,13 @@ class LauncherUpdateConfig:
     check_interval_ms: int = 3_600_000
 
 
+@dataclass(frozen=True)
+class AuthConfig:
+    api_base_url: str = "http://192.168.55.100:8000"
+    connect_timeout: float = 10.0
+    read_timeout: float = 30.0
+
+
 def load_github_config() -> GitHubConfig:
     values = dotenv_values(ENV_PATH)
     local_token = str(values.get("GITHUB_TOKEN") or "").strip()
@@ -46,3 +53,12 @@ def load_launcher_update_config() -> LauncherUpdateConfig:
             "ErrorsLab32/ErrorLauncher",
         ).strip()
     )
+
+
+def load_auth_config() -> AuthConfig:
+    values = dotenv_values(ENV_PATH)
+    api_base_url = os.getenv(
+        "API_BASE_URL",
+        str(values.get("API_BASE_URL") or "http://192.168.55.100:8000"),
+    ).strip()
+    return AuthConfig(api_base_url=api_base_url.rstrip("/"))

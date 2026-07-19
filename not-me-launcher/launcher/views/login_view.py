@@ -32,7 +32,8 @@ class LoginView(QWidget):
         self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
 
         login_button = QPushButton("Войти")
-        login_button.setObjectName("primaryButton")
+        self.login_button = login_button
+        self.login_button.setObjectName("primaryButton")
         login_button.clicked.connect(self.login_requested)
 
         register_button = QPushButton("Создать аккаунт")
@@ -42,6 +43,11 @@ class LoginView(QWidget):
         recovery_button = QPushButton("Восстановить пароль")
         recovery_button.setObjectName("linkButton")
         recovery_button.clicked.connect(self.recovery_requested)
+
+        self.error_label = QLabel()
+        self.error_label.setObjectName("mutedLabel")
+        self.error_label.setWordWrap(True)
+        self.error_label.hide()
 
         form = QFrame()
         form.setObjectName("authForm")
@@ -57,6 +63,7 @@ class LoginView(QWidget):
         form_layout.addWidget(self.password_input)
         form_layout.addSpacing(4)
         form_layout.addWidget(login_button)
+        form_layout.addWidget(self.error_label)
         form_layout.addSpacing(8)
         form_layout.addWidget(register_button)
         form_layout.addWidget(recovery_button)
@@ -66,3 +73,14 @@ class LoginView(QWidget):
         layout.addStretch()
         layout.addWidget(form, alignment=Qt.AlignmentFlag.AlignHCenter)
         layout.addStretch()
+
+    def set_login_in_progress(self, in_progress: bool) -> None:
+        self.login_button.setEnabled(not in_progress)
+
+    def show_login_error(self, message: str) -> None:
+        self.error_label.setText(message)
+        self.error_label.show()
+
+    def clear_login_error(self) -> None:
+        self.error_label.clear()
+        self.error_label.hide()

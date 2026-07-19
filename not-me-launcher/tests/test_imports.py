@@ -11,6 +11,7 @@ MODULES = (
     "launcher.models.installation_state",
     "launcher.models.launcher_update",
     "launcher.services.github_release_service",
+    "launcher.services.auth_service",
     "launcher.services.game_installation_service",
     "launcher.services.game_process_service",
     "launcher.services.launcher_update_service",
