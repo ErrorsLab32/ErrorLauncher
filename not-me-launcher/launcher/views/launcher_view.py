@@ -195,13 +195,6 @@ class LauncherView(QWidget):
         self._set_state(InstallationState.CheckingForUpdates)
 
         config = load_github_config()
-        if not config.token:
-            self.patch_title.setText("ТЕСТОВАЯ СБОРКА НЕДОСТУПНА")
-            self._set_patch_notes_markdown(
-                "Загрузка тестовой сборки станет доступна после авторизации"
-            )
-            self._set_state(InstallationState.AccessUnavailable)
-            return
         thread = QThread(self)
         worker = ReleaseCheckWorker(config)
         worker.moveToThread(thread)
@@ -256,7 +249,7 @@ class LauncherView(QWidget):
     def _on_release_error(self, message: str) -> None:
         self._release = None
         user_message = "Загрузка тестовой сборки временно недоступна. Повторите попытку позже."
-        self.patch_title.setText("ТЕСТОВАЯ СБОРКА НЕДОСТУПНА")
+        self.patch_title.setText("НЕ УДАЛОСЬ ПОЛУЧИТЬ ДАННЫЕ СБОРКИ")
         self._set_patch_notes_markdown(user_message)
         self._show_error(user_message)
 
@@ -492,13 +485,6 @@ class LauncherView(QWidget):
             self.progress_detail.clear()
             self.progress.setValue(0)
             self.action_button.setText("ПРОВЕРКА…")
-            self.action_button.setEnabled(False)
-        elif state is InstallationState.AccessUnavailable:
-            self.status_label.setText("ТЕСТОВАЯ СБОРКА НЕДОСТУПНА")
-            self.progress_label.setText("Загрузка тестовой сборки станет доступна после авторизации")
-            self.progress_detail.clear()
-            self.progress.setValue(0)
-            self.action_button.setText("НЕДОСТУПНО")
             self.action_button.setEnabled(False)
         elif state is InstallationState.ReadyToDownload:
             self.status_label.setText("СБОРКА ДОСТУПНА")

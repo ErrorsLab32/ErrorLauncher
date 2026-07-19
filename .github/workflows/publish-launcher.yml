@@ -82,12 +82,23 @@ jobs:
           }
           exit 0
 
+      - name: Require game release credential
+        shell: pwsh
+        env:
+          GAME_RELEASES_TOKEN: ${{ secrets.GAME_RELEASES_TOKEN }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:GAME_RELEASES_TOKEN)) {
+            throw "GAME_RELEASES_TOKEN repository secret is required."
+          }
+
       - name: Test
         shell: pwsh
         run: python -m unittest discover -s tests -v
 
       - name: Build, package, and create installer
         shell: pwsh
+        env:
+          GAME_RELEASES_TOKEN: ${{ secrets.GAME_RELEASES_TOKEN }}
         run: ./scripts/package_launcher_release.ps1 -Version "${{ steps.version.outputs.version }}" -PythonExecutable "python"
 
       - name: Upload build artifact

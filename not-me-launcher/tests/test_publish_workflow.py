@@ -25,6 +25,8 @@ class PublishWorkflowTests(unittest.TestCase):
         self.assertIn("ErrorLabsPlaytest-${{ steps.version.outputs.version }}-win-x64.zip", rendered)
         self.assertIn("launcher-manifest.json", rendered)
         self.assertIn("git tag $env:TAG $env:GITHUB_SHA", rendered)
+        self.assertIn("GAME_RELEASES_TOKEN repository secret is required", rendered)
+        self.assertIn("GAME_RELEASES_TOKEN: ${{ secrets.GAME_RELEASES_TOKEN }}", rendered)
 
 
 if __name__ == "__main__":

@@ -61,13 +61,29 @@ if ($LASTEXITCODE -ne 0 -or -not $normalizedVersion) {
 }
 
 $versionFile = Join-Path $projectRoot "launcher\version.py"
+$configFile = Join-Path $projectRoot "launcher\config.py"
 $originalVersionFile = [IO.File]::ReadAllText($versionFile)
+$originalConfigFile = [IO.File]::ReadAllText($configFile)
 $utf8NoBom = [Text.UTF8Encoding]::new($false)
+$gameReleasesToken = $env:GAME_RELEASES_TOKEN
+if ([string]::IsNullOrWhiteSpace($gameReleasesToken)) {
+    throw "GAME_RELEASES_TOKEN must be set for a production release build."
+}
+$encodedGameReleasesToken = [Convert]::ToBase64String($utf8NoBom.GetBytes($gameReleasesToken))
 try {
     [IO.File]::WriteAllText($versionFile, "LAUNCHER_VERSION = `"$normalizedVersion`"`n", $utf8NoBom)
+    $buildConfig = $originalConfigFile.Replace(
+        'BUILT_GAME_RELEASES_TOKEN_B64 = ""',
+        "BUILT_GAME_RELEASES_TOKEN_B64 = `"$encodedGameReleasesToken`""
+    )
+    if ($buildConfig -eq $originalConfigFile) {
+        throw "Could not inject the production game release credential."
+    }
+    [IO.File]::WriteAllText($configFile, $buildConfig, $utf8NoBom)
     & (Join-Path $PSScriptRoot "build_launcher.ps1") -PythonExecutable $PythonExecutable
 } finally {
     [IO.File]::WriteAllText($versionFile, $originalVersionFile, $utf8NoBom)
+    [IO.File]::WriteAllText($configFile, $originalConfigFile, $utf8NoBom)
 }
 
 $buildDirectory = Join-Path $projectRoot "dist\release"

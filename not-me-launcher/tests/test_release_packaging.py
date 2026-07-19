@@ -38,6 +38,8 @@ class PackagingScriptTests(unittest.TestCase):
         self.assertIn("ErrorLabsPlaytest-$normalizedVersion-win-x64.zip", content)
         self.assertIn("launcher-manifest.json", content)
         self.assertIn('Join-Path $projectRoot "release"', content)
+        self.assertIn("GAME_RELEASES_TOKEN must be set", content)
+        self.assertIn("BUILT_GAME_RELEASES_TOKEN_B64", content)
 
     def test_pyinstaller_spec_is_available_to_ci(self) -> None:
         spec_file = PROJECT_ROOT / "ErrorLabsPlaytest.spec"
