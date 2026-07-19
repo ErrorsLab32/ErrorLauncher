@@ -57,8 +57,9 @@ def load_launcher_update_config() -> LauncherUpdateConfig:
 
 def load_auth_config() -> AuthConfig:
     values = dotenv_values(ENV_PATH)
-    api_base_url = os.getenv(
+    configured_url = os.getenv(
         "API_BASE_URL",
         str(values.get("API_BASE_URL") or "http://192.168.55.100:8000"),
     ).strip()
+    api_base_url = os.getenv("NOT_ME_API_BASE_URL", "").strip() or configured_url
     return AuthConfig(api_base_url=api_base_url.rstrip("/"))
