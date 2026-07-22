@@ -1,6 +1,7 @@
 from pathlib import Path
 import shutil
 import unittest
+from unittest.mock import Mock
 import zipfile
 
 from updater.update_engine import UpdateEngine, UpdateEngineError, UpdateRequest
@@ -95,6 +96,15 @@ class UpdateEngineTests(unittest.TestCase):
             b"old",
         )
         self.assertGreaterEqual(len(launches), 2)
+
+    def test_locked_replacement_is_retried(self) -> None:
+        engine = self._engine(lambda *_args: FakeProcess())
+        source = Mock()
+        source.__str__ = Mock(return_value="source")
+        destination = Path("destination")
+        source.replace.side_effect = [OSError("locked"), OSError("locked"), None]
+        engine._replace_with_retry(source, destination)  # type: ignore[arg-type]
+        self.assertEqual(source.replace.call_count, 3)
 
     def _write_valid_package(self) -> None:
         with zipfile.ZipFile(self.package, "w") as archive:

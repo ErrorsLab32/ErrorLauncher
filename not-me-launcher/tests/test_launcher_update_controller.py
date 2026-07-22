@@ -115,6 +115,22 @@ class LauncherUpdateControllerTests(unittest.TestCase):
         self.assertEqual(self.controller.state, LauncherUpdateState.Idle)
         self.assertTrue(any("skipped in dev mode" in value for value in self.service.messages))
 
+    def test_packaged_update_requests_explicit_shutdown_after_updater_starts(self) -> None:
+        self.controller.pending_release = self._release()
+        executable = self.root / "installed" / "ErrorLabsPlaytest.exe"
+        executable.parent.mkdir(parents=True)
+        executable.write_bytes(b"launcher")
+        updater = executable.parent / "ErrorLabsUpdater.exe"
+        updater.write_bytes(b"updater")
+        shutdown_requested: list[bool] = []
+        self.controller.close_for_update_requested.connect(lambda: shutdown_requested.append(True))
+        with patch.object(sys, "frozen", True, create=True), \
+             patch.object(sys, "executable", str(executable)), \
+             patch("launcher.launcher_update_controller.QProcess.startDetached", return_value=(True, 1)):
+            self.controller._apply_update(self.root / "package.zip")
+        self.assertEqual(shutdown_requested, [True])
+        self.assertEqual(self.controller.state, LauncherUpdateState.Restarting)
+
     @staticmethod
     def _release() -> LauncherUpdateRelease:
         return LauncherUpdateRelease(

@@ -39,6 +39,7 @@ class LauncherWindow(QMainWindow):
         self._closing_for_update = False
         self._view_before_update = None
         self._real_shutdown = False
+        self._shutdown_for_update = False
         self.tray_service: TrayService | None = None
 
         self.login_view = LoginView()
@@ -139,17 +140,27 @@ class LauncherWindow(QMainWindow):
         self._view_before_update = None
 
     def _close_for_update(self) -> None:
-        self._closing_for_update = True
-        QTimer.singleShot(0, self.close)
+        self._shutdown_for_update = True
+        self.request_real_shutdown()
 
     def _show_launcher_update_error(self, message: str) -> None:
         QMessageBox.warning(self, "ErrorLabs Playtest", message)
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if self._closing_for_update or self._real_shutdown:
+            update_ready = self.launcher_update_controller.request_shutdown()
+            game_ready = self.launcher_view.request_worker_shutdown()
+            if not (update_ready and game_ready):
+                event.ignore()
+                QTimer.singleShot(200, self.close)
+                return
             if self.tray_service is not None:
                 self.tray_service.hide()
+            instance = getattr(QApplication.instance(), "instance_service", None)
+            if instance is not None:
+                instance.close()
             event.accept()
+            QTimer.singleShot(0, QApplication.quit)
             return
         if self.launcher_update_controller.is_critical:
             event.ignore()

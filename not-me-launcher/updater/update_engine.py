@@ -82,9 +82,9 @@ class UpdateEngine:
         moved_new = False
         new_process: subprocess.Popen | None = None
         try:
-            target.replace(self.backup)
+            self._replace_with_retry(target, self.backup)
             moved_old = True
-            self.staging.replace(target)
+            self._replace_with_retry(self.staging, target)
             moved_new = True
             installed_entrypoint = (target / entrypoint).resolve()
             self._require_inside(installed_entrypoint, target)
@@ -195,6 +195,23 @@ class UpdateEngine:
                 return True
             time.sleep(0.2)
         return not self._process_exists(process_id)
+
+    def _replace_with_retry(self, source: Path, destination: Path) -> None:
+        last_error: OSError | None = None
+        for attempt in range(1, 6):
+            try:
+                source.replace(destination)
+                return
+            except OSError as error:
+                last_error = error
+                self._log(
+                    f"replace retry operation=replace attempt={attempt} source={source} "
+                    f"destination={destination} error={error!r} launcher_pid_alive={self._process_exists(self.request.launcher_pid)}"
+                )
+                time.sleep(0.2 * attempt)
+        raise UpdateEngineError(
+            f"Не удалось заменить файл обновления: {source} -> {destination}. Подробности: {self.log_path}"
+        ) from last_error
 
     def _wait_for_health_marker(self, process: subprocess.Popen) -> bool:
         deadline = time.monotonic() + self.health_timeout
