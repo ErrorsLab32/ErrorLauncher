@@ -22,7 +22,7 @@ class GitHubConfig:
 @dataclass(frozen=True)
 class LauncherUpdateConfig:
     repository: str = "ErrorsLab32/ErrorLauncher"
-    check_interval_ms: int = 3_600_000
+    check_interval_ms: int = 300_000
 
 
 def load_github_config() -> GitHubConfig:

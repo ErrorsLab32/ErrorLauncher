@@ -52,6 +52,9 @@ class LauncherView(QWidget):
         self._installed_version = preferences.installed_version
         self._state = InstallationState.NotInstalled
         self._launcher_update_blocked = False
+        self._game_check_timer = QTimer(self)
+        self._game_check_timer.setInterval(120_000)
+        self._game_check_timer.timeout.connect(self._run_scheduled_game_check)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(42, 28, 42, 34)
@@ -436,6 +439,7 @@ class LauncherView(QWidget):
         self.path_hint.setVisible(self._preferences.install_path is None)
 
     def request_worker_shutdown(self) -> bool:
+        self.stop_background_checks()
         if self._download_worker is not None:
             self._download_worker.cancel()
         running_threads = (
@@ -450,8 +454,17 @@ class LauncherView(QWidget):
         return not any(True for _thread in running_threads)
 
     def start_game_release_check(self) -> None:
+        if not self._game_check_timer.isActive():
+            self._game_check_timer.start()
         if not self._check_started and not self._launcher_update_blocked:
             self._start_release_check()
+
+    def _run_scheduled_game_check(self) -> None:
+        if not self._launcher_update_blocked and self._release_thread is None:
+            self._start_release_check()
+
+    def stop_background_checks(self) -> None:
+        self._game_check_timer.stop()
 
     def set_game_operations_blocked(self, blocked: bool) -> None:
         self._launcher_update_blocked = blocked
