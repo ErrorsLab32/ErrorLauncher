@@ -198,8 +198,8 @@ def run() -> int:
 
     local_data_path = launcher_local_data_path()
     local_data_path.mkdir(parents=True, exist_ok=True)
-    instance = SingleInstanceService(local_data_path)
-    if not instance.acquire():
+    instance = SingleInstanceService()
+    if not instance.acquire(background="--background" in sys.argv):
         return 0
     app.instance_service = instance  # type: ignore[attr-defined]
 
