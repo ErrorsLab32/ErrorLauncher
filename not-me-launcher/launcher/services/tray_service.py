@@ -22,6 +22,7 @@ class TrayService(QObject):
         self.tray_menu.addAction(self.tray_exit_action)
         self.tray_icon.setContextMenu(self.tray_menu)
         self.tray_icon.activated.connect(self._activated)
+        self.tray_icon.messageClicked.connect(self.open_requested)
 
     @property
     def is_ready(self) -> bool:
@@ -39,8 +40,20 @@ class TrayService(QObject):
     def hide(self) -> None:
         self.tray_icon.hide()
 
-    def notify(self, title: str, message: str) -> None:
-        self.tray_icon.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information)
+    def notify(self, title: str, message: str, duration_ms: int = 9000) -> bool:
+        available = QSystemTrayIcon.isSystemTrayAvailable()
+        print(f"tray notify available={available} visible={self.is_visible} ready={self.is_ready}")
+        if not available or not self.is_ready or not self.is_visible:
+            return False
+        try:
+            self.tray_icon.showMessage(
+                title, message, QSystemTrayIcon.MessageIcon.Information, duration_ms
+            )
+            print("tray showMessage called result=sent")
+            return True
+        except Exception as error:
+            print(f"tray showMessage failed error={error!r}")
+            return False
 
     def _activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason == QSystemTrayIcon.ActivationReason.DoubleClick:

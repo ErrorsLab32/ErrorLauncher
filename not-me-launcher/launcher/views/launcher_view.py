@@ -1,4 +1,5 @@
 from pathlib import Path
+from collections.abc import Callable
 
 from packaging.version import InvalidVersion, Version
 from PySide6.QtCore import QThread, QTimer, Qt, Signal, Slot
@@ -52,6 +53,7 @@ class LauncherView(QWidget):
         self._installed_version = preferences.installed_version
         self._state = InstallationState.NotInstalled
         self._launcher_update_blocked = False
+        self._game_update_notifier: Callable[[str], bool] | None = None
         self._game_check_timer = QTimer(self)
         self._game_check_timer.setInterval(120_000)
         self._game_check_timer.timeout.connect(self._run_scheduled_game_check)
@@ -243,6 +245,7 @@ class LauncherView(QWidget):
                 self._set_state(InstallationState.ReadyToPlay)
             else:
                 self._set_state(InstallationState.UpdateAvailable)
+                self._notify_game_update_if_needed(release.tag_name)
         elif installer.download_is_complete(release):
             self._set_state(InstallationState.Downloaded)
         else:
@@ -458,6 +461,24 @@ class LauncherView(QWidget):
             self._game_check_timer.start()
         if not self._check_started and not self._launcher_update_blocked:
             self._start_release_check()
+
+    def set_game_update_notifier(self, notifier: Callable[[str], bool]) -> None:
+        self._game_update_notifier = notifier
+
+    def _notify_game_update_if_needed(self, version: str) -> None:
+        previous = self._preferences.last_notified_game_version
+        print(f"game update detected version={version} last_notified={previous}")
+        if previous == version:
+            print("game update notification skipped reason=already-notified")
+            return
+        if self._game_update_notifier is None:
+            print("game update notification skipped reason=tray-not-ready")
+            return
+        if self._game_update_notifier(version):
+            self._preferences.mark_game_version_notified(version)
+            print("game update notification result=saved")
+        else:
+            print("game update notification result=not-sent")
 
     def _run_scheduled_game_check(self) -> None:
         if not self._launcher_update_blocked and self._release_thread is None:

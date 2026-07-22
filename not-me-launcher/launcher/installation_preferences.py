@@ -65,6 +65,7 @@ class InstallationPreferences(QObject):
         self._installed_size_bytes: int | None = None
         self._launch_on_windows_start = True
         self._tray_close_notice_shown = False
+        self._last_notified_game_version: str | None = None
         self._load()
 
     @property
@@ -120,6 +121,19 @@ class InstallationPreferences(QObject):
     @property
     def tray_close_notice_shown(self) -> bool:
         return self._tray_close_notice_shown
+
+    @property
+    def last_notified_game_version(self) -> str | None:
+        return self._last_notified_game_version
+
+    def mark_game_version_notified(self, version: str) -> None:
+        self._last_notified_game_version = version
+        self._save()
+
+    def reset_last_notified_game_version_for_debug(self) -> None:
+        """Development-only helper; deliberately does not change other settings."""
+        self._last_notified_game_version = None
+        self._save()
 
     def set_launch_on_windows_start(self, enabled: bool) -> None:
         enabled = bool(enabled)
@@ -264,6 +278,10 @@ class InstallationPreferences(QObject):
         installed_size_bytes = data.get("installed_size_bytes")
         launch_on_windows_start = data.get("launch_on_windows_start", True)
         self._tray_close_notice_shown = data.get("tray_close_notice_shown") is True
+        last_notified_game_version = data.get("last_notified_game_version")
+        self._last_notified_game_version = (
+            last_notified_game_version if isinstance(last_notified_game_version, str) and last_notified_game_version else None
+        )
         self._launch_on_windows_start = launch_on_windows_start is not False
         self._installed_version = (
             installed_version
@@ -304,6 +322,7 @@ class InstallationPreferences(QObject):
             "installed_size_bytes": self._installed_size_bytes,
             "launch_on_windows_start": self._launch_on_windows_start,
             "tray_close_notice_shown": self._tray_close_notice_shown,
+            "last_notified_game_version": self._last_notified_game_version,
         }
         temporary_path: Path | None = None
         try:

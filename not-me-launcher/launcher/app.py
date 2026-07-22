@@ -220,6 +220,13 @@ def run() -> int:
     app.setWindowIcon(icon)
     tray = TrayService(app, icon)
     window.set_tray_service(tray)
+    window.launcher_view.set_game_update_notifier(
+        lambda _version: tray.notify(
+            "Доступно обновление игры",
+            "Для Not Me доступно новое обновление",
+            9000,
+        )
+    )
     tray.show()
     instance.activation_requested.connect(window.restore_from_tray)
     autostart = AutostartService()
