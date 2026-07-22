@@ -3,8 +3,8 @@ import shutil
 import sys
 
 from PySide6.QtCore import QCoreApplication, Qt, QTimer
-from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWidget
+from PySide6.QtGui import QGuiApplication, QIcon
+from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWidget, QSystemTrayIcon
 
 from launcher.config import load_launcher_update_config
 from launcher.launcher_update_controller import LauncherUpdateController
@@ -154,10 +154,18 @@ class LauncherWindow(QMainWindow):
         if self.launcher_update_controller.is_critical:
             event.ignore()
             return
+        tray = self.tray_service
+        print(f"close-to-tray tray_ready={tray is not None and tray.is_ready} tray_visible={tray is not None and tray.is_visible}")
+        if tray is None or not tray.is_ready or not QSystemTrayIcon.isSystemTrayAvailable():
+            QMessageBox.information(self, "Not Me Launcher", "Системный трей недоступен, окно остаётся открытым.")
+            event.ignore()
+            return
+        if not tray.is_visible:
+            tray.show()
         event.ignore()
         self.hide()
-        if self.tray_service is not None and not self.installation_preferences.tray_close_notice_shown:
-            self.tray_service.notify("Not Me Launcher", "Лаунчер продолжает работать в области уведомлений")
+        if not self.installation_preferences.tray_close_notice_shown:
+            tray.notify("Not Me Launcher", "Лаунчер продолжает работать в области уведомлений")
             self.installation_preferences.mark_tray_close_notice_shown()
 
 
@@ -173,6 +181,7 @@ def run() -> int:
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
     app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
     app.setStyle("Fusion")
     app.setStyleSheet(load_stylesheet())
 
@@ -184,7 +193,21 @@ def run() -> int:
     app.instance_service = instance  # type: ignore[attr-defined]
 
     window = LauncherWindow()
-    tray = TrayService(app, app.windowIcon())
+    icon_path = _launcher_icon_path()
+    icon = QIcon(str(icon_path)) if icon_path is not None else app.windowIcon()
+    if icon.isNull():
+        icon = app.style().standardIcon(app.style().StandardPixmap.SP_ComputerIcon)
+    print(f"tray available={QSystemTrayIcon.isSystemTrayAvailable()} icon_path={icon_path} icon_null={icon.isNull()}")
+    if not QSystemTrayIcon.isSystemTrayAvailable() or icon.isNull():
+        print("tray initialization failed; main window will remain available")
+        window.show()
+        _write_health_marker(local_data_path)
+        _cleanup_confirmed_backup(local_data_path)
+        QTimer.singleShot(0, window.start_background_services)
+        app.aboutToQuit.connect(instance.close)
+        return app.exec()
+    app.setWindowIcon(icon)
+    tray = TrayService(app, icon)
     window.set_tray_service(tray)
     tray.show()
     instance.activation_requested.connect(window.restore_from_tray)
@@ -202,6 +225,15 @@ def run() -> int:
     QTimer.singleShot(0, window.start_background_services)
     app.aboutToQuit.connect(instance.close)
     return app.exec()
+
+
+def _launcher_icon_path() -> Path | None:
+    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+    candidate = root / "launcher" / "resources" / "launcher.svg"
+    if candidate.is_file():
+        return candidate
+    source_candidate = Path(__file__).resolve().parent / "resources" / "launcher.svg"
+    return source_candidate if source_candidate.is_file() else None
 
 
 def _apply_autostart(service: AutostartService, enabled: bool, tray: TrayService) -> None:

@@ -8,6 +8,10 @@ datas = [
         str(project_root / "launcher" / "resources" / "styles.qss"),
         "launcher/resources",
     ),
+    (
+        str(project_root / "launcher" / "resources" / "launcher.svg"),
+        "launcher/resources",
+    ),
 ]
 
 launcher_analysis = Analysis(
