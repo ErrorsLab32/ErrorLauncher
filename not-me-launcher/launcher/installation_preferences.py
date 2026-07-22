@@ -38,6 +38,7 @@ def safe_tag_name(tag_name: str) -> str:
 class InstallationPreferences(QObject):
     install_path_changed = Signal(object)
     download_active_changed = Signal(bool)
+    launch_on_windows_start_changed = Signal(bool)
     SAFETY_MARGIN_BYTES = 512 * 1024 * 1024
 
     def __init__(
@@ -62,6 +63,8 @@ class InstallationPreferences(QObject):
         self._executable_path: Path | None = None
         self._download_active = False
         self._installed_size_bytes: int | None = None
+        self._launch_on_windows_start = True
+        self._tray_close_notice_shown = False
         self._load()
 
     @property
@@ -109,6 +112,27 @@ class InstallationPreferences(QObject):
     @property
     def installed_size_bytes(self) -> int | None:
         return self._installed_size_bytes
+
+    @property
+    def launch_on_windows_start(self) -> bool:
+        return self._launch_on_windows_start
+
+    @property
+    def tray_close_notice_shown(self) -> bool:
+        return self._tray_close_notice_shown
+
+    def set_launch_on_windows_start(self, enabled: bool) -> None:
+        enabled = bool(enabled)
+        if self._launch_on_windows_start == enabled:
+            return
+        self._launch_on_windows_start = enabled
+        self._save()
+        self.launch_on_windows_start_changed.emit(enabled)
+
+    def mark_tray_close_notice_shown(self) -> None:
+        if not self._tray_close_notice_shown:
+            self._tray_close_notice_shown = True
+            self._save()
 
     def current_installed_size_bytes(self) -> int | None:
         if self._installed_size_bytes is not None:
@@ -238,6 +262,9 @@ class InstallationPreferences(QObject):
         install_path = data.get("install_path")
         executable_path = data.get("executable_path")
         installed_size_bytes = data.get("installed_size_bytes")
+        launch_on_windows_start = data.get("launch_on_windows_start", True)
+        self._tray_close_notice_shown = data.get("tray_close_notice_shown") is True
+        self._launch_on_windows_start = launch_on_windows_start is not False
         self._installed_version = (
             installed_version
             if isinstance(installed_version, str) and installed_version
@@ -275,6 +302,8 @@ class InstallationPreferences(QObject):
                 str(self._executable_path) if self._executable_path else None
             ),
             "installed_size_bytes": self._installed_size_bytes,
+            "launch_on_windows_start": self._launch_on_windows_start,
+            "tray_close_notice_shown": self._tray_close_notice_shown,
         }
         temporary_path: Path | None = None
         try:

@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QCheckBox,
     QVBoxLayout,
     QWidget,
 )
@@ -85,6 +86,12 @@ class SettingsView(QWidget):
         path_actions.addWidget(self.open_path_button)
         path_actions.addStretch()
 
+        autostart_caption = QLabel("АВТОЗАПУСК")
+        autostart_caption.setObjectName("sectionCaption")
+        self.autostart_checkbox = QCheckBox("Запускать вместе с Windows")
+        self.autostart_checkbox.setChecked(preferences.launch_on_windows_start)
+        self.autostart_checkbox.toggled.connect(preferences.set_launch_on_windows_start)
+
         login_caption = QLabel("ЛОГИН ПОЛЬЗОВАТЕЛЯ")
         login_caption.setObjectName("sectionCaption")
         login_value = QLabel("player_demo")
@@ -113,6 +120,11 @@ class SettingsView(QWidget):
         form_layout.addWidget(path_caption)
         form_layout.addWidget(self.install_path_label)
         form_layout.addLayout(path_actions)
+        form_layout.addSpacing(20)
+        form_layout.addWidget(self._separator())
+        form_layout.addSpacing(18)
+        form_layout.addWidget(autostart_caption)
+        form_layout.addWidget(self.autostart_checkbox)
         form_layout.addSpacing(20)
         form_layout.addWidget(self._separator())
         form_layout.addSpacing(18)

@@ -2,7 +2,7 @@ from pathlib import Path
 import shutil
 import sys
 
-from PySide6.QtCore import QCoreApplication, QLockFile, Qt, QTimer
+from PySide6.QtCore import QCoreApplication, Qt, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox, QStackedWidget
 
@@ -18,6 +18,9 @@ from launcher.views.login_view import LoginView
 from launcher.views.recovery_view import RecoveryView
 from launcher.views.register_view import RegisterView
 from launcher.views.settings_view import SettingsView
+from launcher.services.autostart_service import AutostartService
+from launcher.services.single_instance_service import SingleInstanceService
+from launcher.services.tray_service import TrayService
 
 
 class LauncherWindow(QMainWindow):
@@ -35,6 +38,8 @@ class LauncherWindow(QMainWindow):
         self.installation_preferences = InstallationPreferences()
         self._closing_for_update = False
         self._view_before_update = None
+        self._real_shutdown = False
+        self.tray_service: TrayService | None = None
 
         self.login_view = LoginView()
         self.register_view = RegisterView()
@@ -64,6 +69,20 @@ class LauncherWindow(QMainWindow):
 
     def start_background_services(self) -> None:
         self.launcher_update_controller.start()
+
+    def set_tray_service(self, tray_service: TrayService) -> None:
+        self.tray_service = tray_service
+        tray_service.open_requested.connect(self.restore_from_tray)
+        tray_service.quit_requested.connect(self.request_real_shutdown)
+
+    def restore_from_tray(self) -> None:
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def request_real_shutdown(self) -> None:
+        self._real_shutdown = True
+        self.close()
 
     def _connect_navigation(self) -> None:
         self.login_view.login_requested.connect(
@@ -127,19 +146,19 @@ class LauncherWindow(QMainWindow):
         QMessageBox.warning(self, "ErrorLabs Playtest", message)
 
     def closeEvent(self, event) -> None:  # type: ignore[no-untyped-def]
-        if self._closing_for_update:
+        if self._closing_for_update or self._real_shutdown:
+            if self.tray_service is not None:
+                self.tray_service.hide()
             event.accept()
             return
         if self.launcher_update_controller.is_critical:
             event.ignore()
             return
-        update_ready = self.launcher_update_controller.request_shutdown()
-        game_ready = self.launcher_view.request_worker_shutdown()
-        if update_ready and game_ready:
-            event.accept()
-            return
         event.ignore()
-        QTimer.singleShot(200, self.close)
+        self.hide()
+        if self.tray_service is not None and not self.installation_preferences.tray_close_notice_shown:
+            self.tray_service.notify("Not Me Launcher", "Лаунчер продолжает работать в области уведомлений")
+            self.installation_preferences.mark_tray_close_notice_shown()
 
 
 def load_stylesheet() -> str:
@@ -159,18 +178,37 @@ def run() -> int:
 
     local_data_path = launcher_local_data_path()
     local_data_path.mkdir(parents=True, exist_ok=True)
-    instance_lock = QLockFile(str(local_data_path / "errorlabs-playtest.lock"))
-    instance_lock.setStaleLockTime(0)
-    if not instance_lock.tryLock(100):
+    instance = SingleInstanceService(local_data_path)
+    if not instance.acquire():
         return 0
-    app.instance_lock = instance_lock  # type: ignore[attr-defined]
+    app.instance_service = instance  # type: ignore[attr-defined]
 
     window = LauncherWindow()
-    window.show()
+    tray = TrayService(app, app.windowIcon())
+    window.set_tray_service(tray)
+    tray.show()
+    instance.activation_requested.connect(window.restore_from_tray)
+    autostart = AutostartService()
+    warning = autostart.apply(window.installation_preferences.launch_on_windows_start)
+    if warning:
+        print(warning)
+    window.installation_preferences.launch_on_windows_start_changed.connect(
+        lambda enabled: _apply_autostart(autostart, enabled, tray)
+    )
+    if "--background" not in sys.argv:
+        window.show()
     _write_health_marker(local_data_path)
     _cleanup_confirmed_backup(local_data_path)
     QTimer.singleShot(0, window.start_background_services)
+    app.aboutToQuit.connect(instance.close)
     return app.exec()
+
+
+def _apply_autostart(service: AutostartService, enabled: bool, tray: TrayService) -> None:
+    warning = service.apply(enabled)
+    if warning:
+        print(warning)
+        tray.notify("Not Me Launcher", warning)
 
 
 def _write_health_marker(local_data_path: Path) -> None:
