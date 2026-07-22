@@ -24,6 +24,8 @@ class ReleaseInfo:
     published_at: str
     assets: tuple[ReleaseAsset, ...]
     http_status: int
+    removed_files: tuple[str, ...] = ()
+    installed_size_bytes: int | None = None
 
     @property
     def archive_parts(self) -> tuple[ReleaseAsset, ...]:

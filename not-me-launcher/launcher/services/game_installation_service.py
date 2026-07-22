@@ -70,9 +70,8 @@ class GameInstallationService:
         staging_directory = (
             service_root / "staging" / safe_tag_name(release.tag_name)
         ).resolve()
-        backup_directory = (service_root / "backup" / "game").resolve()
         game_directory = (install_path / "game").resolve()
-        for path in (download_directory, staging_directory, backup_directory):
+        for path in (download_directory, staging_directory):
             self._require_inside(path, service_root)
         self._require_inside(game_directory, install_path)
 
@@ -92,7 +91,11 @@ class GameInstallationService:
         stage_callback("Установка сборки")
         self._remove_stale_staging(staging_directory)
         staging_directory.mkdir(parents=True, exist_ok=True)
-        self._extract(extractor, first_volume, staging_directory)
+        try:
+            self._extract(extractor, first_volume, staging_directory)
+        except GameInstallationError:
+            self._remove_stale_staging(staging_directory)
+            raise
 
         game_root = self._select_game_root(staging_directory)
         executable = self._find_game_executable(game_root)
@@ -101,13 +104,25 @@ class GameInstallationService:
 
         stage_callback("Завершение установки")
         installed_relative = Path("game") / relative_executable
-        self._replace_game(
-            game_directory,
-            game_root,
-            backup_directory,
-            release.tag_name,
-            installed_relative,
-        )
+        backup_directory = (service_root / "backup" / "game").resolve()
+        if self._preferences.installation_is_valid and game_directory.is_dir():
+            self._merge_game(game_directory, game_root)
+            self._remove_listed_files(game_directory, release.removed_files)
+            final_executable = install_path / installed_relative
+            if not final_executable.is_file():
+                raise GameInstallationError("Updated game executable is missing.")
+            try:
+                self._preferences.mark_installation_complete(
+                    release.tag_name, installed_relative,
+                    release.installed_size_bytes or self._directory_size(game_directory),
+                )
+            except InstallationPathError as error:
+                raise GameInstallationError("Не удалось заменить установленную версию игры.") from error
+        else:
+            self._replace_game(
+                game_directory, game_root, backup_directory, release.tag_name,
+                installed_relative, release.installed_size_bytes,
+            )
 
         self._cleanup_after_success(
             download_directory,
@@ -312,6 +327,7 @@ class GameInstallationService:
         backup_directory: Path,
         version: str,
         installed_relative: Path,
+        installed_size_bytes: int | None = None,
     ) -> None:
         backup_parent = backup_directory.parent
         backup_parent.mkdir(parents=True, exist_ok=True)
@@ -361,7 +377,10 @@ class GameInstallationService:
             )
             if final_executable is None or not final_executable.is_file():
                 raise OSError("expected executable is missing after replacement")
-            self._preferences.mark_installation_complete(version, installed_relative)
+            self._preferences.mark_installation_complete(
+                version, installed_relative,
+                installed_size_bytes or self._directory_size(game_directory),
+            )
         except (OSError, InstallationPathError) as error:
             self._log(f"replacement failure error={error!r}")
             rollback_error: OSError | None = None
@@ -381,6 +400,46 @@ class GameInstallationService:
             raise GameInstallationError(
                 "Не удалось заменить установленную версию игры."
             ) from error
+
+    def _merge_game(self, game_directory: Path, prepared_game_root: Path) -> None:
+        try:
+            for source in prepared_game_root.rglob("*"):
+                relative = source.relative_to(prepared_game_root)
+                destination = (game_directory / relative).resolve()
+                self._require_inside(destination, game_directory)
+                if source.is_dir():
+                    destination.mkdir(parents=True, exist_ok=True)
+                elif source.is_file():
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source, destination)
+        except OSError as error:
+            self._log(f"merge failure error={error!r}")
+            raise GameInstallationError("Unable to update game files.") from error
+
+    def _remove_listed_files(self, game_directory: Path, removed_files: tuple[str, ...]) -> None:
+        for item in removed_files:
+            relative = Path(item)
+            if relative.is_absolute() or ".." in relative.parts or relative.drive or not item:
+                raise GameInstallationError("Manifest contains an unsafe removed file path.")
+            target = (game_directory / relative).resolve()
+            try:
+                target.relative_to(game_directory)
+            except ValueError as error:
+                raise GameInstallationError("Manifest contains an unsafe removed file path.") from error
+            if target.is_symlink() or (target.exists() and not target.is_file()):
+                raise GameInstallationError("Manifest contains an unsafe removed file path.")
+            target.unlink(missing_ok=True)
+            parent = target.parent
+            while parent != game_directory:
+                try:
+                    parent.rmdir()
+                except OSError:
+                    break
+                parent = parent.parent
+
+    @staticmethod
+    def _directory_size(directory: Path) -> int:
+        return sum(path.stat().st_size for path in directory.rglob("*") if path.is_file())
 
     def _cleanup_after_success(
         self,

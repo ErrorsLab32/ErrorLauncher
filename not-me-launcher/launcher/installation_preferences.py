@@ -61,6 +61,7 @@ class InstallationPreferences(QObject):
         self._install_path: Path | None = None
         self._executable_path: Path | None = None
         self._download_active = False
+        self._installed_size_bytes: int | None = None
         self._load()
 
     @property
@@ -104,6 +105,26 @@ class InstallationPreferences(QObject):
     @property
     def download_active(self) -> bool:
         return self._download_active
+
+    @property
+    def installed_size_bytes(self) -> int | None:
+        return self._installed_size_bytes
+
+    def current_installed_size_bytes(self) -> int | None:
+        if self._installed_size_bytes is not None:
+            return self._installed_size_bytes
+        if self._install_path is None:
+            return None
+        game_directory = self._install_path / "game"
+        if not game_directory.is_dir():
+            return None
+        try:
+            size = sum(path.stat().st_size for path in game_directory.rglob("*") if path.is_file())
+        except OSError:
+            return None
+        self._installed_size_bytes = size
+        self._save()
+        return size
 
     def validate_and_set_install_path(self, path: Path) -> Path:
         normalized = path.expanduser().resolve()
@@ -173,6 +194,7 @@ class InstallationPreferences(QObject):
         self,
         installed_version: str,
         executable_path: Path,
+        installed_size_bytes: int | None = None,
     ) -> None:
         if self._install_path is None:
             raise InstallationPathError("Папка установки не выбрана.")
@@ -190,13 +212,16 @@ class InstallationPreferences(QObject):
 
         previous_version = self._installed_version
         previous_executable = self._executable_path
+        previous_size = self._installed_size_bytes
         self._installed_version = installed_version
         self._executable_path = executable_path
+        self._installed_size_bytes = installed_size_bytes
         try:
             self._save()
         except InstallationPathError:
             self._installed_version = previous_version
             self._executable_path = previous_executable
+            self._installed_size_bytes = previous_size
             raise
 
     def _load(self) -> None:
@@ -212,6 +237,7 @@ class InstallationPreferences(QObject):
         installed_version = data.get("installed_version")
         install_path = data.get("install_path")
         executable_path = data.get("executable_path")
+        installed_size_bytes = data.get("installed_size_bytes")
         self._installed_version = (
             installed_version
             if isinstance(installed_version, str) and installed_version
@@ -234,6 +260,10 @@ class InstallationPreferences(QObject):
             and ".." not in parsed_executable.parts
             else None
         )
+        self._installed_size_bytes = (
+            installed_size_bytes if isinstance(installed_size_bytes, int)
+            and not isinstance(installed_size_bytes, bool) and installed_size_bytes >= 0 else None
+        )
         if not self.state_path.is_file():
             self._save()
 
@@ -244,6 +274,7 @@ class InstallationPreferences(QObject):
             "executable_path": (
                 str(self._executable_path) if self._executable_path else None
             ),
+            "installed_size_bytes": self._installed_size_bytes,
         }
         temporary_path: Path | None = None
         try:

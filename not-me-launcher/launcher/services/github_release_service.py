@@ -74,6 +74,8 @@ class GitHubReleaseService:
                 published_at=str(data.get("published_at") or ""),
                 assets=assets,
                 http_status=response.status_code,
+                removed_files=self._parse_removed_files(data.get("removed_files")),
+                installed_size_bytes=self._parse_installed_size(data.get("installed_size_bytes")),
             )
         except GitHubReleaseError:
             raise
@@ -266,6 +268,22 @@ class GitHubReleaseService:
             "X-GitHub-Api-Version": self.API_VERSION,
             "User-Agent": self.USER_AGENT,
         }
+
+    @staticmethod
+    def _parse_removed_files(value: object) -> tuple[str, ...]:
+        if value is None:
+            return ()
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise ValueError("invalid removed_files")
+        return tuple(value)
+
+    @staticmethod
+    def _parse_installed_size(value: object) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError("invalid installed_size_bytes")
+        return value
 
     @staticmethod
     def _parse_asset(data: object) -> ReleaseAsset:

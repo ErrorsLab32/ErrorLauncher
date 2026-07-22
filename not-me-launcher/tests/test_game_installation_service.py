@@ -82,7 +82,7 @@ class GameInstallationServiceTests(unittest.TestCase):
         self.assertFalse((directory / "Windows.7z.001").exists())
         self.assertFalse((directory / "Windows.7z.002").exists())
 
-    def test_metadata_failure_rolls_back_working_game(self) -> None:
+    def test_metadata_failure_keeps_previous_installed_version(self) -> None:
         old_executable = self.install_path / "game" / "NotMe.exe"
         old_executable.parent.mkdir(parents=True)
         old_executable.write_bytes(b"old game")
@@ -109,13 +109,13 @@ class GameInstallationServiceTests(unittest.TestCase):
                     ):
                         service.install(release, lambda _stage: None)
 
-        self.assertEqual(old_executable.read_bytes(), b"old game")
         self.assertEqual(self.preferences.installed_version, "v0.5.0")
 
-    def test_failure_before_old_game_move_does_not_delete_it(self) -> None:
+    def test_update_merges_files_and_preserves_unrelated_content(self) -> None:
         old_executable = self.install_path / "game" / "NotMe.exe"
         old_executable.parent.mkdir(parents=True)
         old_executable.write_bytes(b"old game")
+        (old_executable.parent / "user-settings.ini").write_bytes(b"keep")
         self.preferences.mark_installation_complete(
             "v0.5.0", Path("game") / "NotMe.exe"
         )
@@ -125,22 +125,43 @@ class GameInstallationServiceTests(unittest.TestCase):
 
         def fake_extract(_extractor: Path, _volume: Path, staging: Path) -> None:
             (staging / "NotMe.exe").write_bytes(b"new game")
-
-        original_write_text = Path.write_text
-
-        def fail_marker(path: Path, data: str, **kwargs) -> int:
-            if path.name == ".replacement-version":
-                raise OSError("marker denied")
-            return original_write_text(path, data, **kwargs)
+            (staging / "new-file.txt").write_bytes(b"new")
 
         with patch.object(service, "find_extractor", return_value=Path("7z.exe")):
             with patch.object(service, "_extract", side_effect=fake_extract):
-                with patch.object(Path, "write_text", fail_marker):
-                    with self.assertRaises(GameInstallationError):
-                        service.install(release, lambda _stage: None)
+                service.install(release, lambda _stage: None)
 
-        self.assertEqual(old_executable.read_bytes(), b"old game")
-        self.assertEqual(self.preferences.installed_version, "v0.5.0")
+        self.assertEqual(old_executable.read_bytes(), b"new game")
+        self.assertEqual((old_executable.parent / "new-file.txt").read_bytes(), b"new")
+        self.assertEqual((old_executable.parent / "user-settings.ini").read_bytes(), b"keep")
+        self.assertEqual(self.preferences.installed_version, "v0.6.2")
+
+    def test_update_removes_manifest_listed_file_and_cleans_staging(self) -> None:
+        game = self.install_path / "game"
+        executable = game / "NotMe.exe"
+        executable.parent.mkdir(parents=True)
+        executable.write_bytes(b"old")
+        (game / "obsolete.txt").write_bytes(b"obsolete")
+        self.preferences.mark_installation_complete("v0.5.0", Path("game") / "NotMe.exe")
+        release = self._release("v0.6.2", removed_files=("obsolete.txt",))
+        self._write_downloads(release)
+        service = GameInstallationService(self.preferences)
+
+        def fake_extract(_extractor: Path, _volume: Path, staging: Path) -> None:
+            (staging / "NotMe.exe").write_bytes(b"new")
+
+        with patch.object(service, "find_extractor", return_value=Path("7z.exe")):
+            with patch.object(service, "_extract", side_effect=fake_extract):
+                service.install(release, lambda _stage: None)
+
+        self.assertFalse((game / "obsolete.txt").exists())
+        self.assertFalse((self.install_path / ".errorlabs-playtest" / "staging" / "v0.6.2").exists())
+
+    def test_unsafe_removed_path_is_rejected(self) -> None:
+        game = self.install_path / "game"
+        game.mkdir()
+        with self.assertRaises(GameInstallationError):
+            GameInstallationService(self.preferences)._remove_listed_files(game, ("../outside.txt",))
 
     def _write_downloads(self, release: ReleaseInfo) -> Path:
         directory = self.preferences.release_download_directory(release.tag_name)
@@ -150,7 +171,7 @@ class GameInstallationServiceTests(unittest.TestCase):
         return directory
 
     @staticmethod
-    def _release(tag: str) -> ReleaseInfo:
+    def _release(tag: str, removed_files: tuple[str, ...] = ()) -> ReleaseInfo:
         return ReleaseInfo(
             tag_name=tag,
             name="Build",
@@ -162,6 +183,7 @@ class GameInstallationServiceTests(unittest.TestCase):
                 ReleaseAsset(3, "7z2602.exe", 100, "", "https://example/3"),
             ),
             http_status=200,
+            removed_files=removed_files,
         )
 
 

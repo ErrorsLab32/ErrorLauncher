@@ -540,6 +540,18 @@ class LauncherView(QWidget):
         self.progress_detail.clear()
 
     def _download_size_text(self) -> str:
+        if self._release is None:
+            return ""
+        if not self._preferences.installation_is_valid:
+            return f"Размер загрузки: {format_size(self._release.total_asset_size)}"
+        new_size = self._release.installed_size_bytes
+        old_size = self._preferences.current_installed_size_bytes()
+        if new_size is None or old_size is None:
+            return "Изменение размера: неизвестно"
+        difference = new_size - old_size
+        if difference == 0:
+            return "Изменение размера: без изменений"
+        return f"Изменение размера: {'+' if difference > 0 else '-'}{format_size(abs(difference))}"
         return (
             f"Размер загрузки: {format_size(self._release.total_asset_size)}"
             if self._release is not None
