@@ -214,6 +214,11 @@ def run() -> int:
         window.show()
         _write_health_marker(local_data_path)
         _cleanup_confirmed_backup(local_data_path)
+        _synchronize_autostart(
+            AutostartService(),
+            window.installation_preferences.launch_on_windows_start,
+            local_data_path,
+        )
         QTimer.singleShot(0, window.start_background_services)
         app.aboutToQuit.connect(instance.close)
         return app.exec()
@@ -230,16 +235,19 @@ def run() -> int:
     tray.show()
     instance.activation_requested.connect(window.restore_from_tray)
     autostart = AutostartService()
-    warning = autostart.apply(window.installation_preferences.launch_on_windows_start)
-    if warning:
-        print(warning)
     window.installation_preferences.launch_on_windows_start_changed.connect(
-        lambda enabled: _apply_autostart(autostart, enabled, tray)
+        lambda enabled: _apply_autostart(autostart, enabled, tray, local_data_path)
     )
     if "--background" not in sys.argv:
         window.show()
     _write_health_marker(local_data_path)
     _cleanup_confirmed_backup(local_data_path)
+    _synchronize_autostart(
+        autostart,
+        window.installation_preferences.launch_on_windows_start,
+        local_data_path,
+        tray,
+    )
     QTimer.singleShot(0, window.start_background_services)
     app.aboutToQuit.connect(instance.close)
     return app.exec()
@@ -254,11 +262,39 @@ def _launcher_icon_path() -> Path | None:
     return source_candidate if source_candidate.is_file() else None
 
 
-def _apply_autostart(service: AutostartService, enabled: bool, tray: TrayService) -> None:
-    warning = service.apply(enabled)
-    if warning:
-        print(warning)
-        tray.notify("Not Me Launcher", warning)
+def _apply_autostart(
+    service: AutostartService,
+    enabled: bool,
+    tray: TrayService,
+    local_data_path: Path,
+) -> None:
+    _synchronize_autostart(service, enabled, local_data_path, tray)
+
+
+def _synchronize_autostart(
+    service: AutostartService,
+    enabled: bool,
+    local_data_path: Path,
+    tray: TrayService | None = None,
+) -> None:
+    result = service.reconcile(enabled)
+    message = (
+        f"autostart enabled={result.enabled} old_target={result.old_target!r} "
+        f"new_target={result.new_target!r} corrected={result.corrected} "
+        f"removed_obsolete={list(result.removed_obsolete)!r}"
+    )
+    print(message)
+    try:
+        log_path = local_data_path / "logs" / "launcher.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a", encoding="utf-8") as output:
+            output.write(message + "\n")
+    except OSError:
+        pass
+    if result.warning:
+        print(result.warning)
+        if tray is not None:
+            tray.notify("Not Me Launcher", result.warning)
 
 
 def _write_health_marker(local_data_path: Path) -> None:
