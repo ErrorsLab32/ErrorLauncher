@@ -136,6 +136,77 @@ class GameInstallationServiceTests(unittest.TestCase):
         self.assertEqual((old_executable.parent / "user-settings.ini").read_bytes(), b"keep")
         self.assertEqual(self.preferences.installed_version, "v0.6.2")
 
+    def test_successful_update_starts_existing_test_settings_bat_next_to_game_executable(self) -> None:
+        game = self._prepare_existing_game()
+        batch_file = game / "Start_With_Test_Settings.bat"
+        batch_file.write_text("@echo off\n", encoding="utf-8")
+        release = self._release("v0.6.2")
+        self._write_downloads(release)
+        service = GameInstallationService(self.preferences)
+
+        def fake_extract(_extractor: Path, _volume: Path, staging: Path) -> None:
+            (staging / "NotMe.exe").write_bytes(b"new")
+
+        with patch.object(service, "find_extractor", return_value=Path("7z.exe")), patch.object(
+            service, "_extract", side_effect=fake_extract
+        ), patch("launcher.services.game_post_update_service.os.name", "nt"), patch(
+            "launcher.services.game_post_update_service.QProcess.startDetached",
+            return_value=(True, 4242),
+        ) as start:
+            service.install(release, lambda _stage: None)
+
+        start.assert_called_once_with(
+            "cmd.exe", ["/c", str(batch_file)], str(game)
+        )
+
+    def test_failed_update_does_not_start_test_settings_bat(self) -> None:
+        game = self._prepare_existing_game()
+        (game / "Start_With_Test_Settings.bat").write_text("@echo off\n", encoding="utf-8")
+        release = self._release("v0.6.2")
+        self._write_downloads(release)
+        service = GameInstallationService(self.preferences)
+
+        with patch.object(service, "find_extractor", return_value=Path("7z.exe")), patch.object(
+            service, "_extract", side_effect=GameInstallationError("extract failed")
+        ), patch("launcher.services.game_post_update_service.QProcess.startDetached") as start:
+            with self.assertRaises(GameInstallationError):
+                service.install(release, lambda _stage: None)
+
+        start.assert_not_called()
+
+    def test_post_update_bat_runs_only_once_for_one_completed_update(self) -> None:
+        service = GameInstallationService(self.preferences)
+        executable = self.install_path / "game" / "NotMe.exe"
+        executable.parent.mkdir(parents=True)
+        executable.write_bytes(b"game")
+        (executable.parent / "Start_With_Test_Settings.bat").write_text("@echo off\n", encoding="utf-8")
+
+        with patch("launcher.services.game_post_update_service.os.name", "nt"), patch(
+            "launcher.services.game_post_update_service.QProcess.startDetached",
+            return_value=(True, 4242),
+        ) as start:
+            service._post_update.run_after_update("v0.6.2", executable)
+            service._post_update.run_after_update("v0.6.2", executable)
+
+        start.assert_called_once()
+
+    def test_missing_post_update_bat_does_not_break_successful_update(self) -> None:
+        self._prepare_existing_game()
+        release = self._release("v0.6.2")
+        self._write_downloads(release)
+        service = GameInstallationService(self.preferences)
+
+        def fake_extract(_extractor: Path, _volume: Path, staging: Path) -> None:
+            (staging / "NotMe.exe").write_bytes(b"new")
+
+        with patch.object(service, "find_extractor", return_value=Path("7z.exe")), patch.object(
+            service, "_extract", side_effect=fake_extract
+        ), patch("launcher.services.game_post_update_service.QProcess.startDetached") as start:
+            result = service.install(release, lambda _stage: None)
+
+        self.assertEqual(result.installed_version, "v0.6.2")
+        start.assert_not_called()
+
     def test_update_removes_manifest_listed_file_and_cleans_staging(self) -> None:
         game = self.install_path / "game"
         executable = game / "NotMe.exe"
@@ -169,6 +240,13 @@ class GameInstallationServiceTests(unittest.TestCase):
         (directory / "Windows.7z.001").write_bytes(b"first")
         (directory / "Windows.7z.002").write_bytes(b"second")
         return directory
+
+    def _prepare_existing_game(self) -> Path:
+        game = self.install_path / "game"
+        game.mkdir(parents=True)
+        (game / "NotMe.exe").write_bytes(b"old")
+        self.preferences.mark_installation_complete("v0.5.0", Path("game") / "NotMe.exe")
+        return game
 
     @staticmethod
     def _release(tag: str, removed_files: tuple[str, ...] = ()) -> ReleaseInfo:
