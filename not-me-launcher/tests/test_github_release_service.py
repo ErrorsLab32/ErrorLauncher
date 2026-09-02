@@ -1,6 +1,7 @@
 from pathlib import Path
 import shutil
 import unittest
+from unittest.mock import patch
 
 from launcher.config import GitHubConfig
 from launcher.models.release_info import ReleaseAsset, ReleaseInfo
@@ -21,6 +22,7 @@ class FakeResponse:
         self.status_code = status_code
         self._payload = payload or {}
         self._content = content
+        self.headers: dict[str, str] = {}
 
     def json(self) -> dict:
         return self._payload
@@ -54,9 +56,9 @@ class GitHubReleaseServiceTests(unittest.TestCase):
             ["part1", "part2", "part10", "Windows.7z.002", "Windows.7z.010"],
         )
 
-    def test_missing_token_has_readable_error(self) -> None:
+    def test_missing_token_has_readable_error_without_exposing_credential_details(self) -> None:
         config = GitHubConfig("ErrorsLab32/Not-ME", "")
-        with self.assertRaisesRegex(GitHubReleaseError, "GITHUB_TOKEN"):
+        with self.assertRaisesRegex(GitHubReleaseError, "закрытому репозиторию"):
             GitHubReleaseService(config).get_latest_release()
 
     def test_latest_release_parses_and_naturally_sorts_assets(self) -> None:
@@ -85,7 +87,36 @@ class GitHubReleaseServiceTests(unittest.TestCase):
         self.assertEqual(release.assets[0].digest, "sha256:abc")
         headers = session.calls[0][1]["headers"]
         self.assertEqual(headers["Accept"], "application/vnd.github+json")
+        self.assertEqual(headers["Authorization"], "Bearer token-value")
         self.assertNotIn("token-value", str(release))
+
+    def test_diagnostics_do_not_log_token_or_authorization_header(self) -> None:
+        payload = {"tag_name": "v0.8.0", "assets": [self._asset(1, "Windows.7z.001", 1)]}
+        service = GitHubReleaseService(self._config(Path("downloads")))
+        service._session = FakeSession([FakeResponse(payload=payload)])
+        with patch("builtins.print") as output:
+            service.get_latest_release()
+        diagnostics = "\n".join(str(call) for call in output.call_args_list)
+        self.assertNotIn("token-value", diagnostics)
+        self.assertNotIn("Authorization", diagnostics)
+
+    def test_http_diagnostics_include_rate_limit_without_secrets(self) -> None:
+        response = FakeResponse(status_code=403)
+        response.headers = {
+            "Content-Type": "application/json; charset=utf-8",
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Reset": "1788364029",
+        }
+        service = GitHubReleaseService(self._config(Path("downloads")))
+        service._session = FakeSession([response])
+        with patch("builtins.print") as output, self.assertRaisesRegex(
+            GitHubReleaseError, "лимит GitHub API"
+        ):
+            service.get_latest_release()
+        diagnostics = "\n".join(str(call) for call in output.call_args_list)
+        self.assertIn("rate_limit_remaining='0'", diagnostics)
+        self.assertIn("rate_limit_reset='1788364029'", diagnostics)
+        self.assertNotIn("token-value", diagnostics)
 
     def test_download_uses_api_assets_and_ignores_installer(self) -> None:
         root = Path(__file__).parent / "test-download-output"

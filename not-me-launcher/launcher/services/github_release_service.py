@@ -39,6 +39,7 @@ class GitHubReleaseService:
     def get_latest_release(self) -> ReleaseInfo:
         self._require_configuration()
         url = f"{self.API_ROOT}/repos/{self._config.repository}/releases/latest"
+        self._log(f"github release request repo={self._config.repository} url={url} credential_source={self._config.credential_source}")
         try:
             response = self._session.get(
                 url,
@@ -53,6 +54,7 @@ class GitHubReleaseService:
             raise GitHubReleaseError(
                 "Не удалось подключиться к GitHub. Проверьте соединение и повторите попытку."
             ) from error
+        self._log_response(response, "release")
         self._raise_for_status(response)
         try:
             data = response.json()
@@ -80,6 +82,7 @@ class GitHubReleaseService:
         except GitHubReleaseError:
             raise
         except (KeyError, TypeError, ValueError) as error:
+            self._log(f"github release parse_error={type(error).__name__} repo={self._config.repository}")
             raise GitHubReleaseError(
                 "GitHub вернул неполные данные опубликованного релиза."
             ) from error
@@ -214,6 +217,7 @@ class GitHubReleaseService:
             raise GitHubReleaseError(
                 "GitHub не ответил вовремя. Повторите попытку."
             ) from error
+        self._log_response(response, f"asset name={asset.name}")
         self._raise_for_status(response)
         started = time.monotonic()
         received = 0
@@ -247,8 +251,9 @@ class GitHubReleaseService:
         if self._config.repository != "ErrorsLab32/Not-ME":
             raise GitHubReleaseError("Invalid playtest repository configuration.")
         if not self._config.token:
+            self._log(f"github release configuration_error=credential-missing repo={self._config.repository} credential_source=none")
             raise GitHubReleaseError(
-                "Не указан токен доступа к GitHub. Добавьте GITHUB_TOKEN в файл .env"
+                "Доступ к закрытому репозиторию игровых сборок временно недоступен."
             )
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", self._config.repository):
             raise GitHubReleaseError("Некорректно задан GITHUB_REPOSITORY в файле .env.")
@@ -303,13 +308,12 @@ class GitHubReleaseService:
 
     @staticmethod
     def _raise_for_status(response: requests.Response) -> None:
-        if response.status_code in (401, 403):
-            raise GitHubReleaseError("Access to the playtest repository was denied.", response.status_code)
         if response.status_code == 401:
-            raise GitHubReleaseError("Токен GitHub недействителен.")
+            raise GitHubReleaseError("Доступ к репозиторию игровых сборок отклонён.", 401)
         if response.status_code == 403:
             raise GitHubReleaseError(
-                "Недостаточно прав для доступа к репозиторию или превышен лимит GitHub API."
+                "Недостаточно прав для доступа к репозиторию игровых сборок или превышен лимит GitHub API.",
+                403,
             )
         if response.status_code == 404:
             raise GitHubReleaseError(
@@ -327,3 +331,16 @@ class GitHubReleaseService:
         print(f"release: {release.name}")
         for asset in release.assets:
             print(f"asset: {asset.name} | {asset.size}")
+
+    @staticmethod
+    def _log(message: str) -> None:
+        print(message)
+
+    def _log_response(self, response: requests.Response, operation: str) -> None:
+        headers = response.headers
+        self._log(
+            f"github {operation} response repo={self._config.repository} "
+            f"status={response.status_code} content_type={headers.get('Content-Type', '')!r} "
+            f"rate_limit_remaining={headers.get('X-RateLimit-Remaining', '')!r} "
+            f"rate_limit_reset={headers.get('X-RateLimit-Reset', '')!r}"
+        )

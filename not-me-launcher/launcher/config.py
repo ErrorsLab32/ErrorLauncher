@@ -15,6 +15,7 @@ BUILT_GAME_RELEASES_TOKEN_B64 = ""
 class GitHubConfig:
     repository: str
     token: str
+    credential_source: str = "none"
     connect_timeout: float = 10.0
     read_timeout: float = 60.0
 
@@ -27,16 +28,33 @@ class LauncherUpdateConfig:
 
 def load_github_config() -> GitHubConfig:
     values = dotenv_values(ENV_PATH)
-    local_token = str(values.get("GITHUB_TOKEN") or "").strip()
-    built_token = (
-        base64.b64decode(BUILT_GAME_RELEASES_TOKEN_B64).decode("utf-8")
-        if BUILT_GAME_RELEASES_TOKEN_B64
-        else ""
-    )
+    environment_token = os.getenv("GITHUB_TOKEN", "").strip()
+    dotenv_token = str(values.get("GITHUB_TOKEN") or "").strip()
+    built_token = _decode_built_game_releases_token()
+    if environment_token:
+        token, source = environment_token, "env"
+    elif dotenv_token:
+        token, source = dotenv_token, "env"
+    elif built_token:
+        token, source = built_token, "embedded"
+    else:
+        token, source = "", "none"
     return GitHubConfig(
         repository="ErrorsLab32/Not-ME",
-        token=local_token or built_token,
+        token=token,
+        credential_source=source,
     )
+
+
+def _decode_built_game_releases_token() -> str:
+    if not BUILT_GAME_RELEASES_TOKEN_B64:
+        return ""
+    try:
+        return base64.b64decode(
+            BUILT_GAME_RELEASES_TOKEN_B64, validate=True
+        ).decode("utf-8").strip()
+    except (ValueError, UnicodeDecodeError):
+        return ""
 
 
 def load_launcher_update_config() -> LauncherUpdateConfig:
