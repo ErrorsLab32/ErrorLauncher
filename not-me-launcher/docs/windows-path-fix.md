@@ -73,8 +73,8 @@ the packaged test uses a local ZIP so it cannot fetch or publish another release
 
 A physical Windows reboot and clearing unrelated host TEMP files are not
 performed by this script. The report explicitly marks reboot as not tested.
-The original release requirement remains in force unless the user explicitly
-accepts the real Run-command check in its place.
+The user explicitly approved publication without a physical reboot after the
+real Run-command check passed.
 
 ## Changed files
 

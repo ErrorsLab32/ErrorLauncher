@@ -55,9 +55,20 @@ def main():
         require(exe.is_file() and not exe.is_relative_to(temp), "installer writes stable executable")
         first = subprocess.Popen([str(exe), "--background"], cwd=install, env=env)
         processes.append(first)
-        time.sleep(3)
+        # Startup includes Qt loading and shortcut inspection. A hosted runner
+        # may take longer than three seconds; wait for the actual readiness
+        # condition rather than querying Run before startup has registered it.
+        command = None
+        deadline = time.monotonic() + 40
+        while time.monotonic() < deadline and first.poll() is None:
+            try:
+                command = winreg.QueryValueEx(key, "NotMeLauncher")[0]
+            except FileNotFoundError:
+                pass
+            if command == f'"{exe}" --background':
+                break
+            time.sleep(0.2)
         require(first.poll() is None, "packaged Qt launcher remains running")
-        command = winreg.QueryValueEx(key, "NotMeLauncher")[0]
         require(command == f'"{exe}" --background', "autostart targets stable exe with --background")
         shortcut = root / "ErrorLabs Playtest.lnk"
         ps = "$s=New-Object -ComObject WScript.Shell; $l=$s.CreateShortcut($env:SMOKE_LINK); $l.TargetPath=$env:SMOKE_EXE; $l.WorkingDirectory=$env:SMOKE_INSTALL; $l.Save(); $s.Run(('\"'+$env:SMOKE_LINK+'\"'),0,$false)"

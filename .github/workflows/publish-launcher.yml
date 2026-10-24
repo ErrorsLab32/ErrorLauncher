@@ -115,6 +115,17 @@ jobs:
           python scripts/packaged_smoke.py --setup "$setupOutput/ErrorLabsPlaytestSetup-$env:VERSION.exe" --payload $payload --root $smokeRoot --version $env:VERSION
           if ($LASTEXITCODE -ne 0) { throw 'Packaged smoke failed; publication stopped.' }
 
+      - name: Upload packaged smoke diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaged-smoke-diagnostics
+          path: |
+            ${{ runner.workspace }}/launcher-smoke-*/report.json
+            ${{ runner.workspace }}/launcher-smoke-*/installer.log
+            ${{ runner.workspace }}/launcher-smoke-*/LocalAppData/ErrorLabs/ErrorLabs Playtest/logs/*.log
+          if-no-files-found: ignore
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
