@@ -34,6 +34,18 @@ try {
 
 $launcherExe = Join-Path $projectRoot "dist\release\ErrorLabsPlaytest.exe"
 $updaterExe = Join-Path $projectRoot "dist\release\ErrorLabsUpdater.exe"
+
+# PyInstaller resolves Qt's ICU imports against an unrelated Poppler/host ICU
+# DLL when that DLL is present on the build machine. Qt 6.11 loads correctly
+# without these optional ICU files; shipping the host copies causes WinError
+# 127 in QtCore during packaged startup.
+foreach ($foreignQtRuntimeFile in @("icuuc.dll", "icudt78.dll")) {
+    $foreignPath = Join-Path $projectRoot "dist\release\_internal\$foreignQtRuntimeFile"
+    if (Test-Path -LiteralPath $foreignPath -PathType Leaf) {
+        Remove-Item -LiteralPath $foreignPath -Force
+    }
+}
+
 if (-not (Test-Path -LiteralPath $launcherExe -PathType Leaf)) {
     throw "dist/release/ErrorLabsPlaytest.exe was not created."
 }

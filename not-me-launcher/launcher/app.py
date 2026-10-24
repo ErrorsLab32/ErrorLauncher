@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import shutil
 import sys
 
@@ -21,6 +22,7 @@ from launcher.views.settings_view import SettingsView
 from launcher.services.autostart_service import AutostartService
 from launcher.services.single_instance_service import SingleInstanceService
 from launcher.services.tray_service import TrayService
+from launcher.runtime_paths import install_directory
 
 
 class LauncherWindow(QMainWindow):
@@ -35,7 +37,10 @@ class LauncherWindow(QMainWindow):
         self.stack = QStackedWidget()
         self.setCentralWidget(self.stack)
         self.navigation = NavigationController(self.stack)
-        self.installation_preferences = InstallationPreferences()
+        self.installation_preferences = InstallationPreferences(
+            state_path=(launcher_local_data_path() / "smoke-installation.json")
+            if os.getenv("ERRORLABS_SMOKE_TEST") == "1" else None,
+        )
         self._closing_for_update = False
         self._view_before_update = None
         self._real_shutdown = False
@@ -69,6 +74,8 @@ class LauncherWindow(QMainWindow):
         self.navigation.show("login")
 
     def start_background_services(self) -> None:
+        if os.getenv("ERRORLABS_SMOKE_TEST") == "1":
+            return
         self.launcher_update_controller.start()
 
     def set_tray_service(self, tray_service: TrayService) -> None:
@@ -204,6 +211,10 @@ def run() -> int:
     app.instance_service = instance  # type: ignore[attr-defined]
 
     window = LauncherWindow()
+    if os.getenv("ERRORLABS_SMOKE_TEST") == "1":
+        # Exercise real startup/shutdown without network-dependent background
+        # workers. The packaged smoke runner waits for this graceful exit.
+        QTimer.singleShot(12000, window.request_real_shutdown)
     icon_path = _launcher_icon_path()
     icon = QIcon(str(icon_path)) if icon_path is not None else app.windowIcon()
     if icon.isNull():
@@ -313,7 +324,7 @@ def _cleanup_confirmed_backup(local_data_path: Path) -> None:
         return
     marker = local_data_path / "update-health" / f"{LAUNCHER_VERSION}.ok"
     backup = (
-        Path(sys.executable).resolve().parent.parent
+        install_directory().parent
         / ".errorlabs-updater"
         / f"backup-{LAUNCHER_VERSION}"
     )

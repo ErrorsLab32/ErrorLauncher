@@ -84,6 +84,7 @@ class UpdaterWindow(QMainWindow):
         self.worker.finished.connect(self.thread.quit)
         self.worker.finished.connect(self.worker.deleteLater)
         self.thread.finished.connect(self.thread.deleteLater)
+        self.thread.finished.connect(self.close)
 
     def start(self) -> None:
         self.thread.start()
@@ -97,7 +98,6 @@ class UpdaterWindow(QMainWindow):
     @Slot()
     def _on_succeeded(self) -> None:
         self._critical = False
-        self.close()
 
     @Slot(str)
     def _on_failed(self, message: str) -> None:

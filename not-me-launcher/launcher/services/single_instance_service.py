@@ -63,6 +63,11 @@ class SingleInstanceService(QObject):
         if os.name != "nt":
             return True
         import ctypes
+        from ctypes import wintypes
+        ctypes.windll.kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
+        ctypes.windll.kernel32.CreateMutexW.restype = wintypes.HANDLE
+        ctypes.windll.kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+        ctypes.windll.kernel32.ReleaseMutex.argtypes = [wintypes.HANDLE]
         ctypes.windll.kernel32.SetLastError(0)
         handle = ctypes.windll.kernel32.CreateMutexW(None, False, self.mutex_name)
         if not handle:

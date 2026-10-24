@@ -101,6 +101,20 @@ jobs:
           GAME_RELEASES_TOKEN: ${{ secrets.GAME_RELEASES_TOKEN }}
         run: ./scripts/package_launcher_release.ps1 -Version "${{ steps.version.outputs.version }}" -PythonExecutable "python"
 
+      - name: Packaged Windows smoke test (publication gate)
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          $payload = (Resolve-Path 'dist/release').Path
+          $setupOutput = Join-Path (Get-Location) 'build/smoke-setup'
+          & $iscc /Q '/DMyAppId=ErrorLabs.NotMeLauncher.CISmoke' "/DMyAppVersion=$env:VERSION" "/DMyBuildDir=$payload" "/DMyOutputDir=$setupOutput" 'installer/ErrorLabsPlaytest.iss'
+          if ($LASTEXITCODE -ne 0) { throw 'Smoke installer compilation failed.' }
+          $smokeRoot = Join-Path $env:RUNNER_WORKSPACE "launcher-smoke-$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
+          python scripts/packaged_smoke.py --setup "$setupOutput/ErrorLabsPlaytestSetup-$env:VERSION.exe" --payload $payload --root $smokeRoot --version $env:VERSION
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged smoke failed; publication stopped.' }
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:

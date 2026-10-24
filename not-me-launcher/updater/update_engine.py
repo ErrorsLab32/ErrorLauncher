@@ -12,6 +12,8 @@ import zipfile
 
 from PySide6.QtCore import QLockFile
 
+from launcher.runtime_paths import install_directory, is_forbidden_launcher_path
+
 
 StatusCallback = Callable[[str, bool], None]
 
@@ -58,7 +60,12 @@ class UpdateEngine:
         entrypoint = self._validate_entrypoint(request.entrypoint)
         if not package.is_file():
             raise UpdateEngineError("Пакет обновления не найден.")
-        if not target.is_dir():
+        stable_target = install_directory()
+        if target != stable_target:
+            raise UpdateEngineError(
+                f"Обновление разрешено только в постоянную папку лаунчера: {stable_target}"
+            )
+        if is_forbidden_launcher_path(target) or not target.is_dir():
             raise UpdateEngineError("Папка установленного лаунчера не найдена.")
 
         self._log(
@@ -151,6 +158,11 @@ class UpdateEngine:
             raise UpdateEngineError(
                 "Пакет обновления не содержит исполняемый файл лаунчера."
             )
+        # Inno's uninstall metadata belongs to the installation, not the update
+        # archive. Preserve it across the directory swap.
+        for metadata in self.request.target.glob("unins*.*"):
+            if metadata.is_file() and metadata.suffix.lower() in {".exe", ".dat", ".msg"}:
+                shutil.copy2(metadata, self.staging / metadata.name)
 
     def _safe_zip_destination(self, info: zipfile.ZipInfo) -> Path:
         name = info.filename.replace("\\", "/")
@@ -236,6 +248,25 @@ class UpdateEngine:
     def _process_exists(process_id: int) -> bool:
         if process_id <= 0:
             return False
+        if os.name == "nt":
+            # os.kill(pid, 0) calls TerminateProcess on Windows. It is not a
+            # liveness probe and used to kill the launcher during update waits.
+            import ctypes
+            from ctypes import wintypes
+
+            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            kernel.OpenProcess.restype = wintypes.HANDLE
+            kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+            kernel.WaitForSingleObject.restype = wintypes.DWORD
+            kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+            handle = kernel.OpenProcess(0x00100000, False, process_id)  # SYNCHRONIZE
+            if not handle:
+                return ctypes.get_last_error() != 87  # invalid/nonexistent PID
+            try:
+                return kernel.WaitForSingleObject(handle, 0) == 258  # WAIT_TIMEOUT
+            finally:
+                kernel.CloseHandle(handle)
         try:
             os.kill(process_id, 0)
         except OSError:
@@ -244,11 +275,14 @@ class UpdateEngine:
 
     @staticmethod
     def _launch_process(executable: Path, working_directory: Path) -> subprocess.Popen:
+        environment = os.environ.copy()
+        environment["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
         return subprocess.Popen(
             [str(executable)],
             cwd=str(working_directory),
             shell=False,
             close_fds=True,
+            env=environment,
         )
 
     @staticmethod

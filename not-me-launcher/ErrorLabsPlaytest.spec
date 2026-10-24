@@ -14,19 +14,28 @@ datas = [
     ),
 ]
 
+
+def without_host_icu(entries):
+    return [
+        entry
+        for entry in entries
+        if Path(entry[0]).name.lower() not in {"icuuc.dll", "icudt78.dll"}
+    ]
+
 launcher_analysis = Analysis(
     [str(project_root / "main.py")],
     pathex=[str(project_root)],
     binaries=[],
     datas=datas,
-    hiddenimports=[],
+    hiddenimports=["shiboken6", "PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets", "PySide6.QtNetwork", "PySide6.QtPdf", "PySide6.QtSvg"],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(project_root / "runtime_hooks" / "qt_dll_path.py")],
     excludes=[],
     noarchive=False,
     optimize=0,
 )
+launcher_analysis.binaries = without_host_icu(launcher_analysis.binaries)
 launcher_pyz = PYZ(launcher_analysis.pure)
 launcher_exe = EXE(
     launcher_pyz,
@@ -47,14 +56,15 @@ updater_analysis = Analysis(
     pathex=[str(project_root)],
     binaries=[],
     datas=[],
-    hiddenimports=[],
+    hiddenimports=["shiboken6", "PySide6.QtCore", "PySide6.QtGui", "PySide6.QtWidgets", "PySide6.QtNetwork", "PySide6.QtPdf", "PySide6.QtSvg"],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(project_root / "runtime_hooks" / "qt_dll_path.py")],
     excludes=[],
     noarchive=False,
     optimize=0,
 )
+updater_analysis.binaries = without_host_icu(updater_analysis.binaries)
 updater_pyz = PYZ(updater_analysis.pure)
 updater_exe = EXE(
     updater_pyz,

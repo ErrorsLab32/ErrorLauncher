@@ -126,6 +126,9 @@ class LauncherUpdateControllerTests(unittest.TestCase):
         self.controller.close_for_update_requested.connect(lambda: shutdown_requested.append(True))
         with patch.object(sys, "frozen", True, create=True), \
              patch.object(sys, "executable", str(executable)), \
+             patch("launcher.launcher_update_controller.installed_launcher_path", return_value=executable), \
+             patch("launcher.launcher_update_controller.installed_updater_path", return_value=updater), \
+             patch("launcher.launcher_update_controller.is_forbidden_launcher_path", return_value=False), \
              patch("launcher.launcher_update_controller.QProcess.startDetached", return_value=(True, 1)):
             self.controller._apply_update(self.root / "package.zip")
         self.assertEqual(shutdown_requested, [True])

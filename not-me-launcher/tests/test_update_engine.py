@@ -1,8 +1,10 @@
 from pathlib import Path
 import shutil
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 import zipfile
+import subprocess
+import sys
 
 from updater.update_engine import UpdateEngine, UpdateEngineError, UpdateRequest
 
@@ -22,6 +24,18 @@ class FakeProcess:
 
 
 class UpdateEngineTests(unittest.TestCase):
+    def test_process_probe_does_not_terminate_running_process(self) -> None:
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        try:
+            self.assertTrue(UpdateEngine._process_exists(process.pid))
+            self.assertIsNone(process.poll())
+            self.assertTrue(UpdateEngine._process_exists(process.pid))
+            self.assertIsNone(process.poll())
+        finally:
+            process.terminate()
+            process.wait(timeout=5)
+        self.assertFalse(UpdateEngine._process_exists(process.pid))
+
     def setUp(self) -> None:
         self.root = Path(__file__).parent / "test-updater-output"
         shutil.rmtree(self.root, ignore_errors=True)
@@ -30,9 +44,15 @@ class UpdateEngineTests(unittest.TestCase):
         self.target.mkdir()
         (self.target / "ErrorLabsPlaytest.exe").write_bytes(b"old")
         self.package = self.root / "update.zip"
+        self.install_path_patcher = patch(
+            "updater.update_engine.install_directory",
+            return_value=self.target,
+        )
+        self.install_path_patcher.start()
 
     def tearDown(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)
+        self.install_path_patcher.stop()
 
     def test_zip_path_traversal_is_rejected(self) -> None:
         with zipfile.ZipFile(self.package, "w") as archive:
@@ -105,6 +125,23 @@ class UpdateEngineTests(unittest.TestCase):
         source.replace.side_effect = [OSError("locked"), OSError("locked"), None]
         engine._replace_with_retry(source, destination)  # type: ignore[arg-type]
         self.assertEqual(source.replace.call_count, 3)
+
+    def test_update_preserves_installer_uninstall_metadata(self) -> None:
+        self._write_valid_package()
+        (self.target / "unins000.exe").write_bytes(b"uninstaller")
+        (self.target / "unins000.dat").write_bytes(b"installer-state")
+        engine = self._engine(lambda *_args: FakeProcess())
+        engine._prepare_staging(self.package, Path("ErrorLabsPlaytest.exe"))
+        self.assertEqual((engine.staging / "unins000.exe").read_bytes(), b"uninstaller")
+        self.assertEqual((engine.staging / "unins000.dat").read_bytes(), b"installer-state")
+
+    def test_wrong_update_target_is_rejected_before_launcher_wait(self) -> None:
+        self._write_valid_package()
+        engine = self._engine(lambda *_args: FakeProcess())
+        with patch("updater.update_engine.install_directory", return_value=self.root / "stable"), patch.object(engine, "_wait_for_process_exit") as wait:
+            with self.assertRaisesRegex(UpdateEngineError, "постоянную папку"):
+                engine.apply(lambda *_: None)
+            wait.assert_not_called()
 
     def _write_valid_package(self) -> None:
         with zipfile.ZipFile(self.package, "w") as archive:

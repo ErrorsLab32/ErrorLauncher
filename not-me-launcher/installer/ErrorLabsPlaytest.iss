@@ -15,7 +15,9 @@
 #define MyAppPublisher "ErrorLabs"
 #define MyAppExeName "ErrorLabsPlaytest.exe"
 ; This identifier must remain stable across all launcher versions.
-#define MyAppId "{{2AA0E755-5EF9-4D89-86D3-794698C4C3FA}"
+#ifndef MyAppId
+  #define MyAppId "{{2AA0E755-5EF9-4D89-86D3-794698C4C3FA}"
+#endif
 
 [Setup]
 AppId={#MyAppId}
@@ -23,6 +25,8 @@ AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={localappdata}\Programs\ErrorLabs Playtest
+UsePreviousAppDir=no
+DisableDirPage=yes
 DefaultGroupName=ErrorLabs Playtest
 DisableProgramGroupPage=yes
 OutputDir={#MyOutputDir}

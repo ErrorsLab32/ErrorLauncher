@@ -4,6 +4,8 @@ import os
 import re
 import sys
 
+from launcher.runtime_paths import installed_launcher_path, is_forbidden_launcher_path
+
 
 @dataclass(frozen=True)
 class AutostartSyncResult:
@@ -27,7 +29,7 @@ class AutostartService:
     @staticmethod
     def command(entrypoint: Path | None = None) -> str:
         if getattr(sys, "frozen", False):
-            executable = Path(sys.executable).resolve()
+            executable = installed_launcher_path()
             return f'"{executable}" --background'
         entrypoint = entrypoint or Path(sys.argv[0]).resolve()
         interpreter = Path(sys.executable).resolve()
@@ -71,6 +73,10 @@ class AutostartService:
                 new_target = self.command(entrypoint)
                 if self._is_updater_or_staging_target(new_target):
                     raise OSError("refusing to register updater or staging executable")
+                if getattr(sys, "frozen", False):
+                    stable_launcher = installed_launcher_path()
+                    if is_forbidden_launcher_path(stable_launcher) or not stable_launcher.is_file():
+                        raise OSError(f"stable installed launcher is unavailable: {stable_launcher}")
                 corrected = old_target != new_target
                 if corrected:
                     winreg.SetValueEx(
@@ -122,4 +128,6 @@ class AutostartService:
             "errorlabsupdater.exe" in normalized
             or "\\updater-runtime\\" in normalized
             or "\\.errorlabs-updater\\" in normalized
+            or "\\appdata\\local\\temp\\" in normalized
+            or "\\_mei" in normalized
         )

@@ -14,10 +14,13 @@ class AutostartServiceTests(unittest.TestCase):
         self.assertIn('"C:\\Source Space\\main.py"', command)
         self.assertTrue(command.endswith(" --background"))
 
-    def test_packaged_command_uses_executable(self) -> None:
-        with patch.object(sys, "frozen", True, create=True), patch.object(sys, "executable", "C:/App Space/launcher.exe"):
+    def test_packaged_command_uses_stable_install_executable(self) -> None:
+        with patch.object(sys, "frozen", True, create=True), patch(
+            "launcher.services.autostart_service.installed_launcher_path",
+            return_value=Path("C:/App Space/Programs/ErrorLabs Playtest/ErrorLabsPlaytest.exe"),
+        ):
             command = AutostartService.command()
-        self.assertEqual(command, '"C:\\App Space\\launcher.exe" --background')
+        self.assertEqual(command, '"C:\\App Space\\Programs\\ErrorLabs Playtest\\ErrorLabsPlaytest.exe" --background')
 
     def test_registry_failure_is_returned(self) -> None:
         service = AutostartService()
@@ -93,7 +96,13 @@ class AutostartServiceTests(unittest.TestCase):
     def _reconcile(registry, enabled: bool, executable: str):  # type: ignore[no-untyped-def]
         with patch.dict(sys.modules, {"winreg": registry}), patch.object(
             sys, "frozen", True, create=True
-        ), patch.object(sys, "executable", executable):
+        ), patch(
+            "launcher.services.autostart_service.installed_launcher_path",
+            return_value=Path(executable),
+        ), patch(
+            "launcher.services.autostart_service.is_forbidden_launcher_path",
+            return_value=False,
+        ), patch.object(Path, "is_file", return_value=True):
             return AutostartService().reconcile(enabled)
 
 

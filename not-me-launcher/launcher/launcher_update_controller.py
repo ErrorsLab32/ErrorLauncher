@@ -19,6 +19,11 @@ from launcher.services.launcher_update_service import (
     LauncherUpdateService,
     launcher_local_data_path,
 )
+from launcher.runtime_paths import (
+    installed_launcher_path,
+    installed_updater_path,
+    is_forbidden_launcher_path,
+)
 from launcher.version import LAUNCHER_VERSION
 from launcher.views.launcher_update_view import LauncherUpdateView
 from launcher.views.launcher_view import LauncherView
@@ -273,7 +278,12 @@ class LauncherUpdateController(QObject):
             return
 
         self._set_state(LauncherUpdateState.Applying)
-        source_updater = Path(sys.executable).resolve().parent / "ErrorLabsUpdater.exe"
+        stable_launcher = installed_launcher_path()
+        if is_forbidden_launcher_path(stable_launcher) or not stable_launcher.is_file():
+            self._record_failure(f"stable launcher missing: {stable_launcher}")
+            self._restore_after_error("Не найдена стабильная установка лаунчера.")
+            return
+        source_updater = installed_updater_path()
         if not source_updater.is_file():
             self._record_failure("updater executable missing")
             self._restore_after_error("Не найден компонент установки обновления.")
@@ -295,7 +305,7 @@ class LauncherUpdateController(QObject):
             "--package",
             str(package_path.resolve()),
             "--target",
-            str(Path(sys.executable).resolve().parent),
+            str(stable_launcher.parent),
             "--entrypoint",
             str(release.manifest.entrypoint),
             "--pid",
