@@ -148,6 +148,26 @@ QLineEdit:focus {
     border-color: #b9a073;
 }
 
+QComboBox#graphicsPreset {
+    min-height: 34px;
+    padding: 0 10px;
+    background-color: #171718;
+    border: 1px solid #3a3a37;
+    border-radius: 2px;
+    color: #e5e3de;
+}
+
+QComboBox#graphicsPreset:hover,
+QComboBox#graphicsPreset:focus {
+    border-color: #b9a073;
+}
+
+QComboBox#graphicsPreset QAbstractItemView {
+    background-color: #171718;
+    color: #e5e3de;
+    selection-background-color: #5b503d;
+}
+
 QPushButton {
     min-height: 38px;
     padding: 0 16px;

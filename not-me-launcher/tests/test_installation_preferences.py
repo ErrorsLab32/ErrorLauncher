@@ -106,6 +106,13 @@ class InstallationPreferencesTests(unittest.TestCase):
         self.assertTrue(preferences.installation_recorded)
         self.assertFalse(preferences.installation_is_valid)
 
+    def test_graphics_preset_defaults_to_epic_and_is_persisted(self) -> None:
+        preferences = InstallationPreferences(self.state_path, self.legacy_path)
+        self.assertEqual(preferences.graphics_preset, "epic")
+        preferences.set_graphics_preset("cinema")
+        reloaded = InstallationPreferences(self.state_path, self.legacy_path)
+        self.assertEqual(reloaded.graphics_preset, "cinema")
+
 
 if __name__ == "__main__":
     unittest.main()

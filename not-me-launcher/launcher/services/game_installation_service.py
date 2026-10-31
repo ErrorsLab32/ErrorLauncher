@@ -14,7 +14,6 @@ from launcher.installation_preferences import (
     safe_tag_name,
 )
 from launcher.models.release_info import ReleaseAsset, ReleaseInfo
-from launcher.services.game_post_update_service import GamePostUpdateService
 
 
 StageCallback = Callable[[str], None]
@@ -44,7 +43,6 @@ class GameInstallationService:
     def __init__(self, preferences: InstallationPreferences) -> None:
         self._preferences = preferences
         self._log_path = preferences.state_path.parent / "logs" / "installation.log"
-        self._post_update = GamePostUpdateService(self._log)
 
     def download_is_complete(self, release: ReleaseInfo) -> bool:
         try:
@@ -65,7 +63,6 @@ class GameInstallationService:
         if install_path is None:
             raise GameInstallationError("Папка установки не выбрана.")
         install_path = install_path.resolve()
-        is_update = self._preferences.installation_is_valid
         service_root = (install_path / ".errorlabs-playtest").resolve()
         download_directory = self._preferences.release_download_directory(
             release.tag_name
@@ -137,11 +134,6 @@ class GameInstallationService:
             f"install success state=ReadyToPlay version={release.tag_name} "
             f"executable={installed_relative}"
         )
-        if is_update:
-            self._post_update.run_after_update(
-                release.tag_name,
-                (install_path / installed_relative).resolve(),
-            )
         return InstallationResult(release.tag_name, installed_relative)
 
     @staticmethod

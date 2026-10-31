@@ -8,6 +8,7 @@ import tempfile
 from PySide6.QtCore import QObject, QStandardPaths, Signal
 
 from launcher.config import LEGACY_INSTALLATION_STATE_PATH
+from launcher.services.graphics_settings_service import PRESET_LEVELS
 
 
 class InstallationPathError(Exception):
@@ -39,6 +40,7 @@ class InstallationPreferences(QObject):
     install_path_changed = Signal(object)
     download_active_changed = Signal(bool)
     launch_on_windows_start_changed = Signal(bool)
+    graphics_preset_changed = Signal(str)
     SAFETY_MARGIN_BYTES = 512 * 1024 * 1024
 
     def __init__(
@@ -64,6 +66,7 @@ class InstallationPreferences(QObject):
         self._download_active = False
         self._installed_size_bytes: int | None = None
         self._launch_on_windows_start = True
+        self._graphics_preset = "epic"
         self._tray_close_notice_shown = False
         self._last_notified_game_version: str | None = None
         self._load()
@@ -117,6 +120,24 @@ class InstallationPreferences(QObject):
     @property
     def launch_on_windows_start(self) -> bool:
         return self._launch_on_windows_start
+
+    @property
+    def graphics_preset(self) -> str:
+        return self._graphics_preset
+
+    def set_graphics_preset(self, preset: str) -> None:
+        if preset not in PRESET_LEVELS:
+            raise ValueError(f"Unknown graphics preset: {preset}")
+        if self._graphics_preset == preset:
+            return
+        previous = self._graphics_preset
+        self._graphics_preset = preset
+        try:
+            self._save()
+        except InstallationPathError:
+            self._graphics_preset = previous
+            raise
+        self.graphics_preset_changed.emit(preset)
 
     @property
     def tray_close_notice_shown(self) -> bool:
@@ -277,12 +298,18 @@ class InstallationPreferences(QObject):
         executable_path = data.get("executable_path")
         installed_size_bytes = data.get("installed_size_bytes")
         launch_on_windows_start = data.get("launch_on_windows_start", True)
+        graphics_preset = data.get("graphics_preset")
         self._tray_close_notice_shown = data.get("tray_close_notice_shown") is True
         last_notified_game_version = data.get("last_notified_game_version")
         self._last_notified_game_version = (
             last_notified_game_version if isinstance(last_notified_game_version, str) and last_notified_game_version else None
         )
         self._launch_on_windows_start = launch_on_windows_start is not False
+        self._graphics_preset = (
+            graphics_preset
+            if isinstance(graphics_preset, str) and graphics_preset in PRESET_LEVELS
+            else "epic"
+        )
         self._installed_version = (
             installed_version
             if isinstance(installed_version, str) and installed_version
@@ -321,6 +348,7 @@ class InstallationPreferences(QObject):
             ),
             "installed_size_bytes": self._installed_size_bytes,
             "launch_on_windows_start": self._launch_on_windows_start,
+            "graphics_preset": self._graphics_preset,
             "tray_close_notice_shown": self._tray_close_notice_shown,
             "last_notified_game_version": self._last_notified_game_version,
         }

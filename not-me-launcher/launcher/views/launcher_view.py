@@ -5,6 +5,7 @@ from packaging.version import InvalidVersion, Version
 from PySide6.QtCore import QThread, QTimer, Qt, Signal, Slot
 from PySide6.QtGui import QTextDocument
 from PySide6.QtWidgets import (
+    QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -30,6 +31,7 @@ from launcher.services.game_installation_service import (
     InstallationResult,
 )
 from launcher.services.game_process_service import GameLaunchError, GameProcessService
+from launcher.services.graphics_settings_service import PRESET_LEVELS
 from launcher.workers.download_worker import DownloadWorker
 from launcher.workers.installation_worker import InstallationWorker
 from launcher.workers.release_check_worker import ReleaseCheckWorker
@@ -183,11 +185,27 @@ class LauncherView(QWidget):
         self.action_button.setMinimumWidth(420)
         self.action_button.setEnabled(False)
         self.action_button.clicked.connect(self._handle_action)
+        preset_row = QHBoxLayout()
+        preset_label = QLabel("ГРАФИКА")
+        preset_label.setObjectName("metaCaption")
+        self.graphics_preset = QComboBox()
+        self.graphics_preset.setObjectName("graphicsPreset")
+        for value, label in (
+            ("low", "Low"), ("medium", "Medium"), ("high", "High"),
+            ("epic", "Epic"), ("cinema", "Cinema"),
+        ):
+            self.graphics_preset.addItem(label, value)
+        selected = self.graphics_preset.findData(self._preferences.graphics_preset)
+        self.graphics_preset.setCurrentIndex(selected if selected >= 0 else 3)
+        self.graphics_preset.currentIndexChanged.connect(self._on_graphics_preset_changed)
+        preset_row.addWidget(preset_label)
+        preset_row.addWidget(self.graphics_preset, 1)
         action_column.addWidget(self.path_hint)
         action_column.addWidget(self.launcher_update_notice)
         action_column.addWidget(self.progress_label)
         action_column.addWidget(self.progress_detail)
         action_column.addWidget(self.progress)
+        action_column.addLayout(preset_row)
         action_column.addWidget(self.action_button)
         area.addLayout(action_column)
         self._refresh_path_hint()
@@ -397,10 +415,25 @@ class LauncherView(QWidget):
             )
             return
         try:
-            process_id = GameProcessService.launch(executable)
+            process_id = GameProcessService.launch(
+                executable, self._preferences.graphics_preset
+            )
             print(f"Игра запущена, PID: {process_id}")
         except GameLaunchError as error:
             self._show_error(str(error))
+            QMessageBox.warning(self, "ErrorLabs Playtest", str(error))
+
+    def _on_graphics_preset_changed(self, _index: int) -> None:
+        preset = self.graphics_preset.currentData()
+        if preset not in PRESET_LEVELS:
+            return
+        try:
+            self._preferences.set_graphics_preset(preset)
+        except InstallationPathError as error:
+            previous = self.graphics_preset.findData(self._preferences.graphics_preset)
+            self.graphics_preset.blockSignals(True)
+            self.graphics_preset.setCurrentIndex(previous)
+            self.graphics_preset.blockSignals(False)
             QMessageBox.warning(self, "ErrorLabs Playtest", str(error))
 
     def _prepare_download(self) -> None:
